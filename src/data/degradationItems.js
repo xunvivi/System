@@ -3,7 +3,7 @@ const degradationItems = [
     id: "blur",
     name: "模糊",
     description: "退化方法：高斯模糊；退化因子：模糊核大小（核越大，越模糊）、标准差（差越高，越模糊）",
-    iconClass: "fa fa-filter", // 可根据实际替换成合适的图标类名，比如用 react-icons 等
+    iconClass: "fa fa-filter", 
   },
   {
     id: "resample",

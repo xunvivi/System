@@ -513,7 +513,7 @@ const LocalVideoDegradationApp = () => {
           </div>
           <p className="text-gray-600 leading-relaxed">
             {isTypeValid ? DEGRADATION_TYPES[selectedType].description : '未找到该处理类型的描述'}
-            。通过调节参数，可以模拟真实场景下的退化效果，适用于算法验证、效果演示和技术研究等场景。
+            这里是简介，在data/DEGRADATION_TYPES的对应description里修改。
           </p>
         </div>
 
