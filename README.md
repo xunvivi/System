@@ -39,6 +39,9 @@ System/
 6. **DEGRADATION_TYPES的description**
    单降质问题简介
 
+6. **DEGRADATION_TYPES**
+   参数配置
+
 
 
 ## 快速开始
