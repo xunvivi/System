@@ -1,36 +1,94 @@
-# Personal Portfolio Website in React
+## 项目结构
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+```
+System/
+├── public/               # 静态资源
+├── src/
+│   ├── assets/           # 图片等资源文件
+│   ├── components/       # 可复用组件
+│   ├── data/             # 模拟数据
+│   ├── pages/            # 页面组件
+│   ├── router/           # 路由配置
+│   ├── store/            # Redux状态管理
+│   │   └── slices/       # Redux切片
+│   ├── utils/            # 工具函数
+│   ├── App.js            # 应用入口组件
+│   └── index.js          # 渲染入口
+├── server.js             # 后端服务（邮件发送）
+└── package.json          # 项目依赖配置
+```
 
-<img width="1266" alt="Screen Shot 2022-06-19 at 2 18 18 PM" src="https://user-images.githubusercontent.com/50160672/174933373-1ba6cadf-1c9a-48c3-aa58-984d0bd62d82.png">
+## 核心功能模块
 
-Built using:
 
-- Front-end library: React
-- CSS framework: React-bootstrap
-- CSS animations library: Animate.css
+1. **HomePage**
+   首页
 
-In the /personal-portfolio, you can run:
+2. **SimulationPage**
+   单问题模拟页面
 
-### `npm start`
+3. **CompoundPage**
+   复合问题模拟页
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+4. **Navigation**
+   导航栏
+   
+5. **Banner**
+   轮播图
+   
+6. **DEGRADATION_TYPES的description**
+   单降质问题简介
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
 
-### `npm test`
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## 快速开始
 
-### `npm run build`
+### 前置要求
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+- Node.js (v14+)
+- npm 或 yarn
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### 安装步骤
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+1. 克隆仓库
+```bash
+git clone https://github.com/xunvivi/System.git
+cd System
+```
+
+2. 安装依赖
+```bash
+npm install
+# 或
+yarn install
+```
+
+3. 启动开发服务器
+```bash
+npm start
+# 或
+yarn start
+```
+
+4. 打开浏览器访问 `http://localhost:3000`
+
+### 构建生产版本
+
+```bash
+npm run build
+# 或
+yarn build
+```
+
+构建成果将输出到 `build` 目录，可直接部署到静态资源服务器。
+
+## 后端服务
+
+项目包含一个简单的后端服务用于处理邮件发送功能：
+
+```bash
+node server.js
+```
+
+服务将运行在 `http://localhost:5000`
+
