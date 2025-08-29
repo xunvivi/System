@@ -1,33 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Upload, Download, Settings, Image, Video, RefreshCw, Eye, Save, Trash2, Info, FolderOpen, ChevronUp } from 'lucide-react';
+import { Download, Settings, Image, Video, Eye } from 'lucide-react';
 import { DEGRADATION_TYPES } from '../data/DEGRADATION_TYPES';
-import { ParamSlider, ParamSelect } from '../components/ParamControls'; 
+
+// 导入抽离的组件
+import ErrorAlert from '../components/ErrorAlert';
+import MediaInfoCard from '../components/MediaInfoCard';
+import FileBrowser from '../components/FileBrowser';
+import ParamControlPanel from '../components/ParamControlPanel';
+import MediaPreview from '../components/MediaPreview';
+import ActionButtonGroup from '../components/ActionButtonGroup';
+import FileSelector from '../components/FileSelector';
+
+// 导入工具函数
+import { formatDuration, formatBitrate, formatBytes } from '../utils/formatters';
 
 // 后端API地址（对应file目录结构）
 const API_BASE = 'http://localhost:8000/api';
 const BACKEND_FILE_ROOT = 'file';
-
-// 格式化时间（秒转时分秒）
-const formatDuration = (seconds) => {
-  if (!seconds || isNaN(seconds)) return '未知';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}` : 
-         `${m}:${s.toString().padStart(2, '0')}`;
-};
-
-// 格式化比特率
-const formatBitrate = (bitsPerSecond) => {
-  if (!bitsPerSecond || isNaN(bitsPerSecond)) return '未知';
-  if (bitsPerSecond >= 1000000) {
-    return `${(bitsPerSecond / 1000000).toFixed(2)} Mbps`;
-  } else if (bitsPerSecond >= 1000) {
-    return `${(bitsPerSecond / 1000).toFixed(2)} Kbps`;
-  }
-  return `${bitsPerSecond} bps`;
-};
 
 const LocalVideoDegradationApp = () => {
   const { id } = useParams();
@@ -56,9 +46,8 @@ const LocalVideoDegradationApp = () => {
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   
   const processedVideoRef = useRef(null);
-  const originalVideoRef = useRef(null);
   
-  // 初始化参数（无论是否选择文件都初始化参数）
+  // 初始化参数
   useEffect(() => {
     if (!isTypeValid) {
       setError(`无效的退化类型: ${selectedType}`);
@@ -325,530 +314,595 @@ const LocalVideoDegradationApp = () => {
     }
   };
 
-  // 格式化文件大小
-  const formatBytes = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  // 媒体信息展示组件
-  const MediaInfoCard = ({ title, info, mediaType }) => {
-    if (!info) {
-      return (
-        <div className="bg-gray-50 p-4 rounded-lg text-gray-500 text-sm">
-          <div className="flex items-center mb-2">
-            <Info className="w-4 h-4 mr-1" />
-            <span className="font-medium">{title}信息</span>
-          </div>
-          <p>加载中...</p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="bg-gray-50 p-4 rounded-lg text-sm">
-        <div className="flex items-center mb-3">
-          <Info className="w-4 h-4 mr-1 text-blue-500" />
-          <span className="font-medium">{title}信息</span>
-        </div>
-        <ul className="space-y-1.5">
-          <li className="flex justify-between">
-            <span className="text-gray-600">分辨率:</span>
-            <span>{info.width} × {info.height}</span>
-          </li>
-          <li className="flex justify-between">
-            <span className="text-gray-600">格式:</span>
-            <span>{info.format || '未知'}</span>
-          </li>
-          {mediaType === 'video' && (
-            <>
-              <li className="flex justify-between">
-                <span className="text-gray-600">时长:</span>
-                <span>{formatDuration(info.duration)}</span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-gray-600">帧率:</span>
-                <span>{info.fps ? `${info.fps.toFixed(2)} fps` : '未知'}</span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-gray-600">视频编码:</span>
-                <span>{info.video_codec || '未知'}</span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-gray-600">音频编码:</span>
-                <span>{info.audio_codec || '无'}</span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-gray-600">比特率:</span>
-                <span>{formatBitrate(info.bitrate)}</span>
-              </li>
-            </>
-          )}
-          {mediaType === 'image' && (
-            <>
-              <li className="flex justify-between">
-                <span className="text-gray-600">色彩模式:</span>
-                <span>{info.color_space || '未知'}</span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-gray-600">位深度:</span>
-                <span>{info.bit_depth ? `${info.bit_depth} bit` : '未知'}</span>
-              </li>
-            </>
-          )}
-          <li className="flex justify-between">
-            <span className="text-gray-600">文件大小:</span>
-            <span>{info.file_size ? formatBytes(info.file_size) : fileInfo?.size}</span>
-          </li>
-        </ul>
-      </div>
-    );
-  };
-
-  // 文件浏览器组件
-  const FileBrowser = () => (
-    <div className={`fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 transition-opacity duration-300 ${showFileBrowser ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col">
-        <div className="p-6 border-b flex justify-between items-center">
-          <h3 className="text-xl font-bold text-gray-800 flex items-center">
-            <FolderOpen className="w-5 h-5 mr-2 text-blue-600" />
-            服务器文件浏览
-          </h3>
-          <button
-            onClick={() => setShowFileBrowser(false)}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        
-        <div className="p-4 border-b bg-gray-50">
-          <div className="flex items-center">
-            {parentDir !== currentDir && (
-              <button
-                onClick={() => fetchFileList(parentDir)}
-                className="text-blue-600 hover:text-blue-800 mr-2"
-              >
-                <ChevronUp className="w-4 h-4" />
-                <span className="text-sm ml-1">上级目录</span>
-              </button>
-            )}
-            <span className="text-sm text-gray-600">当前目录: {BACKEND_FILE_ROOT}/{currentDir || '/'}</span>
-          </div>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-4">
-          {isLoadingFiles ? (
-            <div className="flex justify-center items-center h-40">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-            </div>
-          ) : fileList.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <Video className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <p>当前目录没有可用的媒体文件</p>
-              <p className="text-sm mt-2">请将文件放在服务器的 {BACKEND_FILE_ROOT} 目录下</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {fileList.map((file) => (
-                <div
-                  key={file.path}
-                  onClick={() => selectServerFile(file)}
-                  className="border rounded-lg p-3 hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors"
-                >
-                  <div className="flex justify-center mb-2">
-                    {file.type === 'image' ? (
-                      <Image className="w-12 h-12 text-green-500" />
-                    ) : (
-                      <Video className="w-12 h-12 text-purple-500" />
-                    )}
-                  </div>
-                  <h4 className="font-medium text-sm truncate">{file.name}</h4>
-                  <p className="text-xs text-gray-500 mt-1">{file.size_human}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        
-        <div className="p-4 border-t flex justify-end">
-          <button
-            onClick={() => setShowFileBrowser(false)}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-          >
-            取消
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
   return (
-    <div className="pt-24 pb-16">
-      <div className="max-w-7xl mx-auto p-6">
-        {/* 错误提示 */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-6 flex justify-between items-center">
-            <span>{error}</span>
-            <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700">
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        )}
+    <div className="container">
+      {/* 错误提示 */}
+      <ErrorAlert 
+        message={error} 
+        onClose={() => setError(null)} 
+      />
 
-        {/* 退化类型描述 */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <div className="flex items-center mb-4">
-            <Settings className="w-6 h-6 text-blue-600 mr-3" />
-            <h2 className="text-2xl font-bold text-gray-800">
-              {isTypeValid ? DEGRADATION_TYPES[selectedType].name : '未知处理'}
-            </h2>
-          </div>
-          <p className="text-gray-600 leading-relaxed">
-            {isTypeValid ? DEGRADATION_TYPES[selectedType].description : '未找到该处理类型的描述'}
-            这里是简介，在data/DEGRADATION_TYPES的对应description里修改。
-          </p>
+      {/* 退化类型描述 */}
+      <div className="page-title">
+        <i className="fas fa-blur"></i> 
+        <h1>
+          {isTypeValid ? DEGRADATION_TYPES[selectedType].name+'降质问题处理': '未知处理'}
+        </h1>
+        <p>
+          {isTypeValid ? DEGRADATION_TYPES[selectedType].description : '未找到该处理类型的描述'}
+          这里是简介，在data/DEGRADATION_TYPES的对应description里修改。
+        </p>
+      </div>
+
+      {/* 文件选择区域 */}
+      <FileSelector
+        backendFilePath={backendFilePath}
+        fileInfo={fileInfo}
+        backendFileRoot={BACKEND_FILE_ROOT}
+        onBrowse={() => {
+          setShowFileBrowser(true);
+          fetchFileList(currentDir);
+        }}
+        onChangeFile={() => {
+          setBackendFilePath('');
+          setPreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+          setFileInfo(null);
+          setOriginalMediaInfo(null);
+          resetProcessingState();
+        }}
+      />
+
+      <div className="content-wrapper">
+        {/* 左侧：参数调节区域 */}
+        <div className="control-panel">
+          
+          <ParamControlPanel
+            degradationType={isTypeValid ? DEGRADATION_TYPES[selectedType] : null}
+            params={params}
+            onParamChange={handleParamChange}
+            onResetParams={handleResetParams}
+            isDisabled={!backendFilePath}
+          />
+
+          {backendFilePath && isTypeValid && (
+            <div className="preview-controls">
+              <ActionButtonGroup
+                isProcessing={isProcessing}
+                onProcess={processFile}
+                onSave={saveToDataset}
+                onDelete={deleteFromDataset}
+                isDeleting={isDeleting}
+                canSave={!!processedBlob}
+                canDelete={!!saveInfo?.fileId}
+              />
+            </div>
+          )}
         </div>
 
-        {/* 文件选择区域 - 横向放在介绍下方 */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
-            <FolderOpen className="w-5 h-5 mr-2" />
-            服务器文件选择
-          </h3>
-          
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition-colors">
-            {!backendFilePath ? (
-              <div className="flex flex-col md:flex-row items-center justify-center gap-6">
-                <div className="flex justify-center mb-4 md:mb-0">
-                  <Image className="w-10 h-10 text-gray-400 mr-2" />
-                  <Video className="w-10 h-10 text-gray-400" />
-                </div>
-                <div className="text-center md:text-left">
-                  <p className="text-gray-600 mb-4">从服务器 {BACKEND_FILE_ROOT} 目录选择文件</p>
-                  <button
-                    onClick={() => {
-                      setShowFileBrowser(true);
-                      fetchFileList(currentDir); // 刷新文件列表
-                    }}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors mb-3"
-                  >
-                    浏览服务器文件
-                  </button>
-                </div>
+        {/* 右侧：结果与信息展示 */}
+        <div className="preview-section">
+          {/* 处理结果 */}
+          <div>
+            <h2 className="section-title">
+              <i className="fas fa-eye"></i>
+              处理结果
+            </h2>
+            <div className="preview-container">
+              <div className="preview-box">
+                <div className="preview-label">原始文件</div>
+                <MediaPreview
+                  url={previewUrl}
+                  mediaType={fileInfo?.type}
+                />
               </div>
-            ) : (
-              <div className="flex flex-col md:flex-row items-center justify-between">
-                <div className="text-left space-y-2 mb-4 md:mb-0">
-                  <p className="font-medium">{backendFilePath}</p>
-                  <p className="text-sm text-gray-600">路径: {BACKEND_FILE_ROOT}/{backendFilePath}</p>
-                  <p className="text-sm text-gray-600">格式: {fileInfo?.format} | 大小: {fileInfo?.size}</p>
+              
+              {processedUrl && (
+                <div className="preview-box">
+                  <div className="preview-label">处理结果</div>
+                  <MediaPreview
+                    url={processedUrl}
+                    mediaType={fileInfo?.type}
+                    isProcessed={true}
+                    onReload={() => processedVideoRef.current?.load()}
+                  />
+                  <div style={{marginTop: '6px', textAlign: 'center'}}>
+                     {processedBlob && null} 
+                  </div>
                 </div>
-                <button
-                  onClick={() => {
-                    setBackendFilePath('');
-                    setPreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
-                    setFileInfo(null);
-                    setOriginalMediaInfo(null);
-                    resetProcessingState();
-                  }}
-                  className="text-red-600 text-sm hover:underline"
-                >
-                  更换文件
-                </button>
+              )}
+            </div>
+            
+            {!backendFilePath && (
+              <div className="media-upload">
+                <Video style={{fontSize: '2rem', marginBottom: '10px', color: 'var(--accent)'}} />
+                <p>请先从服务器选择文件以进行处理</p>
               </div>
             )}
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* 左侧：参数调节区域（始终显示） */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-xl shadow-lg p-6 h-full">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-gray-800">参数调节</h3>
-                <button
-                  onClick={handleResetParams}
-                  disabled={!isTypeValid}
-                  className={`text-gray-500 hover:text-gray-700 flex items-center text-sm ${!isTypeValid ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <RefreshCw className="w-4 h-4 mr-1" />
-                  重置
-                </button>
-              </div>
-
-              {!isTypeValid ? (
-                <div className="text-center py-8 text-gray-500">
-                  <p>无效的退化类型，无法加载参数</p>
-                </div>
-              ) : !backendFilePath ? (
-                <div className="mb-4 text-yellow-600 text-sm bg-yellow-50 p-3 rounded-lg">
-                  <p>请先选择文件，参数调节将影响处理效果</p>
-                </div>
-              ) : null}
-
-              <div className="space-y-4">
-                {isTypeValid && Object.entries(DEGRADATION_TYPES[selectedType].params).map(([key, param]) => {
-                  if (param.type === 'select') {
-                    return (
-                      <ParamSelect
-                        key={key}
-                        label={param.description}
-                        value={params[key]}
-                        options={param.options.map(option => ({
-                          value: option,
-                          label: option === 'nearest' ? '最近邻' :
-                                 option === 'linear' ? '线性' :
-                                 option === 'cubic' ? '三次方' :
-                                 option === 'gaussian' ? '高斯噪声' :
-                                 option === 'salt_pepper' ? '椒盐噪声' :
-                                 option === 'poisson' ? '泊松噪声' : option
-                        }))}
-                        onChange={(value) => handleParamChange(key, value)}
-                        disabled={!backendFilePath}
-                      />
-                    );
-                  } else {
-                    return (
-                      <ParamSlider
-                        key={key}
-                        label={param.description}
-                        value={params[key]}
-                        min={param.min}
-                        max={param.max}
-                        step={param.type === 'float' ? 0.1 : 1}
-                        onChange={(value) => handleParamChange(key, value)}
-                        disabled={!backendFilePath}
-                      />
-                    );
-                  }
-                })}
-              </div>
-
-              {backendFilePath && isTypeValid && (
-                <div className="mt-6 space-y-3">
-                  <button
-                    onClick={processFile}
-                    disabled={isProcessing}
-                    className={`w-full py-2 rounded-lg font-medium transition-colors ${isProcessing ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-                  >
-                    {isProcessing ? '处理中...' : '开始处理'}
-                  </button>
-                  <button
-                    onClick={saveToDataset}
-                    disabled={!processedBlob}
-                    className={`w-full py-2 rounded-lg font-medium transition-colors ${!processedBlob ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-purple-600 text-white hover:bg-purple-700'}`}
-                  >
-                    <Save className="w-4 h-4 inline mr-2" />
-                    保存到服务器
-                  </button>
-                  <button
-                    onClick={deleteFromDataset}
-                    disabled={isDeleting || !saveInfo?.fileId}
-                    className={`w-full py-2 rounded-lg font-medium transition-colors ${isDeleting || !saveInfo?.fileId ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-700'}`}
-                  >
-                    <Trash2 className="w-4 h-4 inline mr-2" />
-                    {isDeleting ? '删除中...' : '从服务器删除'}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* 右侧：结果与信息展示 */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* 处理结果 */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-6">处理结果</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {previewUrl && (
-                  <div>
-                    <h4 className="font-semibold text-gray-800 mb-2">原始文件</h4>
-                    <div className="relative">
-                      {fileInfo?.type === 'image' ? (
-                        <img 
-                          src={previewUrl} 
-                          alt="Original" 
-                          className="w-full h-64 object-cover rounded-lg border" 
-                          onLoad={(e) => {
-                            if (!originalMediaInfo) {
-                              setOriginalMediaInfo(prev => ({
-                                ...prev,
-                                width: e.target.naturalWidth,
-                                height: e.target.naturalHeight
-                              }));
-                            }
-                          }}
-                        />
-                      ) : fileInfo?.type === 'video' ? (
-                        <video 
-                          ref={originalVideoRef}
-                          src={previewUrl} 
-                          controls 
-                          className="w-full h-64 object-cover rounded-lg border"
-                          onLoadedMetadata={(e) => {
-                            if (!originalMediaInfo) {
-                              setOriginalMediaInfo(prev => ({
-                                ...prev,
-                                width: e.target.videoWidth,
-                                height: e.target.videoHeight,
-                                duration: e.target.duration,
-                                fps: e.target.videoFrameRate
-                              }));
-                            }
-                          }}
-                        />
-                      ) : (
-                        <div className="w-full h-64 flex items-center justify-center border rounded-lg bg-gray-100">
-                          <p className="text-gray-500">不支持的文件类型</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {processedUrl && (
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <h4 className="font-semibold text-gray-800">处理结果</h4>
-                      {fileInfo?.type === 'video' && (
-                        <button
-                          onClick={() => processedVideoRef.current?.load()}
-                          className="text-xs text-blue-600 hover:text-blue-800"
-                        >
-                          <RefreshCw className="w-3 h-3 inline mr-1" />
-                          重载
-                        </button>
-                      )}
-                    </div>
-                    <div className="relative">
-                      {fileInfo?.type === 'image' ? (
-                        <img
-                          src={processedUrl}
-                          alt="Processed"
-                          className="w-full h-64 object-cover rounded-lg border"
-                          onError={(e) => {
-                            console.error('图像加载失败:', e);
-                            setError('处理后的图像加载失败');
-                          }}
-                          onLoad={(e) => {
-                            if (!processedMediaInfo) {
-                              setProcessedMediaInfo(prev => ({
-                                ...prev,
-                                width: e.target.naturalWidth,
-                                height: e.target.naturalHeight
-                              }));
-                            }
-                          }}
-                        />
-                      ) : fileInfo?.type === 'video' ? (
-                        <video
-                          ref={processedVideoRef}
-                          src={processedUrl}
-                          controls
-                          preload="metadata"
-                          className="w-full h-64 object-cover rounded-lg border"
-                          onError={(e) => {
-                            console.error('视频加载失败:', e);
-                            setError(`处理后的视频加载失败: ${e.target.error?.message || '未知错误'}`);
-                          }}
-                          onLoadedMetadata={(e) => {
-                            if (!processedMediaInfo) {
-                              setProcessedMediaInfo(prev => ({
-                                ...prev,
-                                width: e.target.videoWidth,
-                                height: e.target.videoHeight,
-                                duration: e.target.duration,
-                                fps: e.target.videoFrameRate
-                              }));
-                            }
-                          }}
-                        />
-                      ) : (
-                        <div className="w-full h-64 flex items-center justify-center border rounded-lg bg-gray-100">
-                          <p className="text-gray-500">不支持的文件类型</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="mt-2 space-y-1">
-                      <button
-                        onClick={downloadFile}
-                        className="w-full flex items-center justify-center px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
-                      >
-                        <Download className="w-4 h-4 mr-1" />
-                        下载
-                      </button>
-                      {processedBlob && (
-                        <p className="text-xs text-gray-500 text-center">文件大小: {formatBytes(processedBlob.size)}</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-              {!backendFilePath && (
-                <div className="text-center py-12 text-gray-500">
-                  <Video className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                  <p>请先从服务器选择文件以进行处理</p>
-                </div>
-              )}
-            </div>
-
-            {/* 媒体信息对比 */}
-            {backendFilePath && (
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center">
-                  <Info className="w-5 h-5 mr-2 text-blue-600" />
-                  媒体信息对比
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* 媒体信息对比 */}
+          {backendFilePath && (
+            <div className="blur-info">
+              <h3 className="section-title">
+                <i className="fas fa-info-circle"></i>
+                媒体信息对比
+              </h3>
+              <div className="info-grid">
+                <div className="info-card">
+                  <h4>
+                    <i className="fas fa-file"></i>
+                    原始文件
+                  </h4>
                   <MediaInfoCard 
-                    title="原始文件" 
                     info={originalMediaInfo} 
                     mediaType={fileInfo?.type} 
                   />
-                  {processedUrl && (
+                </div>
+                {processedUrl && (
+                  <div className="info-card">
+                    <h4>
+                      <i className="fas fa-file-check"></i>
+                      处理后文件
+                    </h4>
                     <MediaInfoCard 
-                      title="处理后文件" 
                       info={processedMediaInfo} 
                       mediaType={fileInfo?.type} 
                     />
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* 文件浏览器弹窗 */}
-      <FileBrowser />
+      <FileBrowser
+        showFileBrowser={showFileBrowser}
+        onClose={() => setShowFileBrowser(false)}
+        fileList={fileList}
+        currentDir={currentDir}
+        parentDir={parentDir}
+        isLoadingFiles={isLoadingFiles}
+        onSelectFile={selectServerFile}
+        onNavigateDir={fetchFileList}
+        backendFileRoot={BACKEND_FILE_ROOT}
+      />
 
       <style jsx>{`
-        .slider {
-          -webkit-appearance: none;
-          background: #e5e7eb;
+        :root {
+            --primary: #0a1128;
+            --secondary: #1c3a6f;
+            --accent: #00e5ff;
+            --accent2: #ff2a6d;
+            --light: #eef0f7;
+            --dark: #050a1a;
+            --gradient: linear-gradient(135deg, var(--accent), #00c8ff);
+            --gradient2: linear-gradient(135deg, var(--accent2), #ff5e94);
+            --card-bg: rgba(10, 17, 40, 0.8);
         }
-        .slider::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          height: 20px;
-          width: 20px;
-          border-radius: 50%;
-          background: #3b82f6;
-          cursor: pointer;
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-        .slider::-moz-range-thumb {
-          height: 20px;
-          width: 20px;
-          border-radius: 50%;
-          background: #3b82f6;
-          cursor: pointer;
-          border: none;
+        
+        body {
+            background: var(--dark);
+            color: var(--light);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+            line-height: 1.2;
+            font-size: 0.4rem;
+        }
+        
+        body::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 10% 20%, rgba(28, 58, 111, 0.2) 0%, transparent 15%),
+                radial-gradient(circle at 90% 80%, rgba(0, 229, 255, 0.1) 0%, transparent 20%),
+                radial-gradient(circle at 50% 50%, rgba(255, 42, 109, 0.05) 0%, transparent 25%);
+            z-index: -1;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 15px;
+        }
+        
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            position: relative;
+            z-index: 10;
+            border-bottom: 1px solid rgba(0, 229, 255, 0.1);
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .logo-icon {
+            background: var(--gradient);
+            width: 45px;
+            height: 45px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            box-shadow: 0 3px 15px rgba(0, 229, 255, 0.3);
+        }
+        
+        .logo-text {
+            font-size: 1.2rem;
+            font-weight: 700;
+            background: linear-gradient(to right, var(--accent), #ffffff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        
+        .page-title {
+            text-align: center;
+            margin: 25px 0;
+        }
+        
+        .page-title h1 {
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+            background: linear-gradient(to right, var(--accent), #ffffff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        
+        .page-title p {
+            font-size: 0.9rem;
+            color: #a0b3d6;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+.content-wrapper {
+    display: flex;
+    gap: 12px;  /* 减小左右区域间距 */
+    margin: 15px 0;  /* 减小上下外边距 */
+}
+
+.control-panel {
+    flex: 0 0 240px;  /* 固定较小宽度 */
+    background: var(--card-bg);
+    border: 1px solid rgba(0, 229, 255, 0.2);
+    border-radius: 10px;  /* 减小圆角 */
+    padding: 12px;  /* 大幅减小内边距 */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);  /* 减小阴影 */
+}
+
+.preview-controls {
+    /* 按钮区域与参数面板的分隔样式 */
+}
+        
+        .preview-section {
+            flex: 2;
+            background: var(--card-bg);
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .section-title {
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--accent);
+        }
+        
+        .section-title i {
+            background: var(--gradient);
+            width: 35px;
+            height: 35px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+        
+        .param-group {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .param-title {
+            font-size: 1rem;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .slider-container {
+            margin: 15px 0;
+        }
+        
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        
+        .slider-label span {
+            font-size: 0.8rem;
+            color: #a0b3d6;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            -webkit-appearance: none;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            outline: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: var(--gradient);
+            border-radius: 50%;
+            cursor: pointer;
+            border: 1px solid var(--dark);
+        }
+        
+        .radio-group {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 12px;
+        }
+        
+        .radio-item {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(0, 229, 255, 0.1);
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.85rem;
+        }
+        
+        .radio-item:hover {
+            background: rgba(0, 229, 255, 0.1);
+            border-color: var(--accent);
+        }
+        
+        .radio-item.active {
+            background: rgba(0, 229, 255, 0.15);
+            border-color: var(--accent);
+            box-shadow: 0 0 10px rgba(0, 229, 255, 0.2);
+        }
+        
+        .media-upload {
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px dashed rgba(0, 229, 255, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            margin: 15px 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .media-upload:hover {
+            border-color: var(--accent);
+            background: rgba(0, 229, 255, 0.05);
+        }
+        
+        .media-upload i {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            color: var(--accent);
+        }
+        
+        .preview-container {
+            display: flex;
+            gap: 15px;
+            margin: 15px 0;
+            flex: 1;
+        }
+        
+        .preview-box {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 220px;
+            position: relative;
+        }
+        
+        .preview-box img, .preview-box video {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        
+        .preview-label {
+            text-align: center;
+            padding: 6px;
+            background: rgba(0, 0, 0, 0.5);
+            font-size: 0.9rem;
+            width: 100%;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+        }
+        
+        .preview-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--gradient);
+            color: var(--dark);
+            padding: 10px 20px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 3px 15px rgba(0, 229, 255, 0.3);
+            gap: 8px;
+            width: 100%;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 229, 255, 0.5);
+        }
+        
+        .btn-outline {
+            background: transparent;
+            border: 1.5px solid var(--accent);
+            color: var(--accent);
+            box-shadow: 0 3px 15px rgba(0, 229, 255, 0.1);
+        }
+        
+        .btn-outline:hover {
+            background: rgba(0, 229, 255, 0.1);
+        }
+        
+        .blur-info {
+            background: rgba(0, 0, 0, 0.3);
+            border-left: 3px solid var(--accent);
+            padding: 15px;
+            border-radius: 0 8px 8px 0;
+            margin: 20px 0;
+        }
+        
+        .blur-info h3 {
+            color: var(--accent);
+            margin-bottom: 10px;
+        }
+        
+        .blur-info p {
+            margin-bottom: 8px;
+            color: #a0b3d6;
+            font-size: 0.85rem;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .info-card {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 12px;
+    border-radius: 8px;
+    /* 去掉信息卡片边框（按需） */
+    /* border: 1px solid rgba(0, 229, 255, 0.1); */ 
+}
+        
+        .info-card h4 {
+            color: var(--accent);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.95rem;
+        }
+        
+        @media (max-width: 992px) {
+            .content-wrapper {
+                flex-direction: column;
+            }
+            
+            .preview-container {
+                flex-direction: column;
+                min-height: auto;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .radio-group {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .page-title h1 {
+                font-size: 1.5rem;
+            }
+
+        /* 在你的 style jsx 里追加 */
+.control-panel {
+    flex: 0 0 240px;  
+    background: var(--card-bg);
+    /* 去掉外边框 */
+    /* border: 1px solid rgba(0, 229, 255, 0.2); */ 
+    border-radius: 10px;  
+    padding: 12px;  
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);  
+}
+
+.param-group {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    /* 去掉参数组底部分隔线 */
+    /* border-bottom: 1px solid rgba(255, 255, 255, 0.1); */ 
+}
+
+.slider-container {
+  /* 滑块容器单独控制间距 */
+  display: flex;
+  flex-direction: column;
+  gap: 8px; 
+}
+
+.slider-label {
+  /* 确保标签和滑块不重叠 */
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
         }
       `}</style>
     </div>

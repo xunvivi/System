@@ -1,474 +1,471 @@
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  Upload, Download, Settings, Image, Video, RefreshCw,
-  Eye, Save, Trash2, X, Info, Clock, Monitor, FileVideo, Zap,
-  ChevronRight, ChevronLeft, Check, AlertCircle
-} from 'lucide-react';
+import { ChevronDown, ChevronUp, Play, RotateCcw, Upload, Download, Eye, Sliders, Settings, Layers, Cog, Film, ArrowLeft, ArrowRight, PlusCircle, Info, X, FileImage, FileVideo, AlertCircle } from 'lucide-react';
 import { DEGRADATION_CONFIG } from '../data/DEGRADATION_CONFIG';
 
-// API工具函数
-const API_BASE_URL = "http://localhost:8000/api";
 
-// 文件上传
-const uploadFile = async (file) => {
-  const formData = new FormData();
-  formData.append("file", file);
-  
-  const response = await fetch(`${API_BASE_URL}/upload`, {
-    method: "POST",
-    body: formData,
+// API基础路径
+const API_BASE_URL = 'http://localhost:8000';
+
+// 根据媒体类型获取支持的压缩格式
+const getSupportedCompressionFormats = (mediaType) => {
+  const formatMap = {
+    image: [
+      { value: 'jpeg', label: 'JPEG' },
+      { value: 'png', label: 'PNG' },
+      { value: 'webp', label: 'WebP' }
+    ],
+    video: [
+      { value: 'h264', label: 'H.264' },
+      { value: 'mpeg4', label: 'MPEG-4' }
+    ]
+  };
+  return formatMap[mediaType] || formatMap.image;
+};
+
+const VideoDegrade = () => {
+  // 状态定义
+  const [expandedStages, setExpandedStages] = useState({
+    stage1: true,
+    stage2: false,
+    stage3: false
   });
   
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || "文件上传失败");
-  }
-  
-  return response.json();
-};
-
-// 复合退化处理
-const processCompositeDegradation = async (params) => {
-  const response = await fetch(`${API_BASE_URL}/composite-degradation`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(params),
+  const [stageEnabled, setStageEnabled] = useState({
+    stage1: true,
+    stage2: true,
+    stage3: false
   });
   
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || "处理失败");
-  }
-  
-  return response.json();
-};
-
-// 获取媒体信息
-const getMediaInfo = async (filePath) => {
-  const response = await fetch(`${API_BASE_URL}/media-info`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ file_path: filePath }),
-  });
-  
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || "获取媒体信息失败");
-  }
-  
-  return response.json();
-};
-
-// 获取文件访问URL
-const getFileUrl = (filePath) => {
-  return `${API_BASE_URL}/file?path=${encodeURIComponent(filePath)}`;
-};
-
-// 格式化时长（秒 → MM:SS）
-const formatDuration = (seconds) => {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-};
-
-// 阶段配置
-const STAGES = [
-  { id: 'stage1', title: '第一阶退化过程（必选，降质全选）', required: true },
-  { id: 'stage2', title: '第二阶退化过程（必选，降质全选）', required: true },
-  { id: 'stage3', title: '第三阶退化过程（可选）', required: false }
-];
-
-// 第一、二阶段必须包含的退化类型
-const STAGE1_2_TYPES = ['blur', 'resample', 'noise', 'compression'];
-
-const ThreeStageDegradationSystem = () => {
-  // 文件状态管理
-  const [file, setFile] = useState(null);
-  const [fileType, setFileType] = useState(null); // 'image' 或 'video'
-  const [originalUrl, setOriginalUrl] = useState(null);
-  const [processedUrl, setProcessedUrl] = useState(null);
-  const [backendFilePath, setBackendFilePath] = useState(null); // 后端文件路径
-  const fileInputRef = useRef(null);
-
-  // 媒体信息
-  const [mediaInfo, setMediaInfo] = useState({
-    original: { name: '', size: '', type: '', resolution: '', codec: '', duration: '', frameRate: '', bitRate: '' },
-    processed: { name: '', size: '', type: '', resolution: '', codec: '', duration: '', frameRate: '', bitRate: '' }
-  });
-
-  // 处理状态
-  const [activeStage, setActiveStage] = useState('stage1');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [processingStage, setProcessingStage] = useState('');
   const [progress, setProgress] = useState(0);
-  const [error, setError] = useState(null);
-  const [isComplete, setIsComplete] = useState(false);
-  const [configErrors, setConfigErrors] = useState([]);
-
-  // 退化配置状态 - 结构: { stage1: { blur: {...}, resample: {...}, ... }, ... }
-  const [degradationConfig, setDegradationConfig] = useState({});
-
-  // 初始化退化配置
-  useEffect(() => {
-    const initialConfig = {};
-    const missingConfigs = []; // 记录缺失的配置项
-    
-    // 初始化第一、二阶段
-    ['stage1', 'stage2'].forEach(stage => {
-      initialConfig[stage] = {};
-      STAGE1_2_TYPES.forEach(type => {
-        // 检查配置是否存在
-        const typeConfig = DEGRADATION_CONFIG.common?.[type];
-        if (!typeConfig) {
-          missingConfigs.push(`阶段 ${stage} 缺少退化类型 "${type}" 的配置`);
-          return;
-        }
-        
-        const params = {};
-        Object.entries(typeConfig.params).forEach(([paramKey, param]) => {
-          params[paramKey] = param.default;
-        });
-        initialConfig[stage][type] = { enabled: true, params };
-      });
-    });
-    
-    // 初始化第三阶段
-    initialConfig.stage3 = {
-      type: null,
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState(null);
+  const [processedPreviewUrl, setProcessedPreviewUrl] = useState(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [mediaPath, setMediaPath] = useState('');
+  const [mediaType, setMediaType] = useState('');
+  const fileInputRef = useRef(null);
+  const [uploadAbortController, setUploadAbortController] = useState(null);
+  const [successMessage, setSuccessMessage] = useState('');
+  
+  // 参数结构
+  const [parameters, setParameters] = useState({
+    stage1: {
+      blur: {
+        kernel_size: DEGRADATION_CONFIG.common.blur.params.kernel_size.default,
+        sigma: DEGRADATION_CONFIG.common.blur.params.sigma.default
+      },
+      resample: {
+        scale_factor: DEGRADATION_CONFIG.common.resample.params.scale_factor.default,
+        interpolation: DEGRADATION_CONFIG.common.resample.params.interpolation.default
+      },
+      noise: {
+        noise_type: DEGRADATION_CONFIG.common.noise.params.noise_type.default,
+        intensity: DEGRADATION_CONFIG.common.noise.params.intensity.default,
+        density: DEGRADATION_CONFIG.common.noise.params.density.default
+      },
+      compression: {
+        format: DEGRADATION_CONFIG.common.compression.params.format.default,
+        quality: DEGRADATION_CONFIG.common.compression.params.quality.default,
+        bitrate: DEGRADATION_CONFIG.common.compression.params.bitrate.default
+      }
+    },
+    stage2: {
+      blur: {
+        kernel_size: 25,
+        sigma: 3.5
+      },
+      resample: {
+        scale_factor: 0.3,
+        interpolation: DEGRADATION_CONFIG.common.resample.params.interpolation.default
+      },
+      noise: {
+        noise_type: DEGRADATION_CONFIG.common.noise.params.noise_type.default,
+        intensity: 0.2,
+        density: 0.1
+      },
+      compression: {
+        format: DEGRADATION_CONFIG.common.compression.params.format.default,
+        quality: 15,
+        bitrate: 500
+      }
+    },
+    stage3: {
+      mediaType: '',
+      degradationType: '',
       params: {}
+    }
+  });
+
+  // 清除错误信息
+  const clearError = () => setErrorMessage('');
+
+  // 文件上传处理
+  const handleFileSelect = async (file) => {
+    if (!file) return;
+    clearError();
+    
+    // 释放可能存在的旧Blob URL，避免内存泄漏
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+      setFilePreviewUrl(null);
+    }
+    if (processedPreviewUrl) {
+      URL.revokeObjectURL(processedPreviewUrl);
+      setProcessedPreviewUrl(null);
+    }
+    
+    // 验证文件类型
+    const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    const validVideoTypes = ['video/mp4', 'video/mov', 'video/avi', 'video/mkv', 'video/webm'];
+    
+    let type = '';
+    if (validImageTypes.includes(file.type)) {
+      type = 'image';
+    } else if (validVideoTypes.includes(file.type)) {
+      type = 'video';
+    } else {
+      setErrorMessage('请上传有效的图像或视频文件（支持JPG、PNG、GIF、WebP、MP4、MOV等）');
+      return;
+    }
+    
+    // 验证文件大小
+    if (file.size > 100 * 1024 * 1024) {
+      setErrorMessage('文件大小不能超过100MB');
+      return;
+    }
+    
+    // 开始上传
+    setIsUploading(true);
+    setUploadProgress(0);
+    setUploadedFile(file);
+    setMediaType(type);
+    
+    // 根据媒体类型自动调整压缩格式
+    const defaultFormats = {
+      image: DEGRADATION_CONFIG.common.compression.params.format.default,
+      video: 'h264'
     };
     
-    setDegradationConfig(initialConfig);
-    // 如果有缺失的配置，记录错误
-    if (missingConfigs.length > 0) {
-      setConfigErrors(missingConfigs);
-      console.warn('检测到缺失的退化配置:', missingConfigs);
-    }
-  }, []);
-
-  // 处理文件上传
-  const handleFileUpload = async (e) => {
-    const selectedFile = e.target.files[0];
-    if (!selectedFile) return;
-
-    // 重置状态
-    setFile(selectedFile);
-    setError(null);
-    setProcessedUrl(null);
-    setIsComplete(false);
-    setIsProcessing(true); // 显示上传中状态
-
-    try {
-      // 调用文件上传接口
-      const uploadResult = await uploadFile(selectedFile);
-      const { file_path: backendFilePath, content_type } = uploadResult.data;
-      
-      // 确定文件类型（image/video）
-      const mediaType = content_type.startsWith('image/') ? 'image' : 'video';
-      setFileType(mediaType);
-      setBackendFilePath(backendFilePath); // 保存后端文件路径
-
-      // 获取原始文件信息
-      const mediaInfo = await getMediaInfo(backendFilePath);
-      setMediaInfo(prev => ({
-        ...prev,
-        original: {
-          name: selectedFile.name,
-          size: mediaInfo.file_size_human,
-          type: content_type,
-          resolution: mediaInfo.width && mediaInfo.height 
-            ? `${mediaInfo.width}x${mediaInfo.height}` 
-            : '未知',
-          codec: mediaType === 'image' 
-            ? mediaInfo.format || '未知' 
-            : mediaInfo.video_codec || '未知',
-          duration: mediaType === 'video' && mediaInfo.duration
-            ? formatDuration(mediaInfo.duration) 
-            : '-',
-          frameRate: mediaType === 'video' && mediaInfo.fps
-            ? `${mediaInfo.fps}fps` 
-            : '-',
-          bitRate: mediaInfo.bitrate 
-            ? `${(mediaInfo.bitrate / 1024 / 1024).toFixed(2)}Mbps` 
-            : '未知'
+    // 更新两个阶段的压缩格式为当前媒体类型支持的格式
+    setParameters(prev => ({
+      ...prev,
+      stage1: {
+        ...prev.stage1,
+        compression: {
+          ...prev.stage1.compression,
+          format: defaultFormats[type]
         }
-      }));
-
-      // 设置原始文件预览URL（通过后端接口访问）
-      setOriginalUrl(getFileUrl(backendFilePath));
-
-    } catch (err) {
-      setError(`上传失败: ${err.message}`);
-    } finally {
-      setIsProcessing(false);
+      },
+      stage2: {
+        ...prev.stage2,
+        compression: {
+          ...prev.stage2.compression,
+          format: defaultFormats[type]
+        }
+      }
+    }));
+    
+    // 创建临时预览
+    const tempPreviewUrl = URL.createObjectURL(file);
+    setFilePreviewUrl(tempPreviewUrl);
+    
+    try {
+      // 模拟上传过程
+      for (let i = 0; i <= 100; i += 10) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        setUploadProgress(i);
+      }
+      
+      // 模拟上传成功
+      setMediaPath(`/uploads/${file.name}`);
+      setIsUploading(false);
+      
+      // 显示成功提示
+      setSuccessMessage('文件上传成功，可以开始处理了');
+      setTimeout(() => setSuccessMessage(''), 3000);
+      
+    } catch (error) {
+      setErrorMessage(error.message || '文件上传失败，请重试');
+      URL.revokeObjectURL(tempPreviewUrl);
+      setFilePreviewUrl(null);
+      setIsUploading(false);
+      setUploadedFile(null);
     }
   };
 
-  // 更新参数值
-  const handleParamChange = (stage, type, paramKey, value) => {
-    setDegradationConfig(prev => ({
+  // 文件处理相关方法
+  const handleFileInputChange = (e) => {
+    const file = e.target.files[0];
+    handleFileSelect(file);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files[0];
+    handleFileSelect(file);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleRemoveFile = () => {
+    setUploadedFile(null);
+    setFilePreviewUrl(null);
+    setProcessedPreviewUrl(null);
+    setMediaPath('');
+    setMediaType('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+    }
+  };
+
+  // 阶段控制方法
+  const toggleStage = (stageId) => {
+    setExpandedStages(prev => ({
+      ...prev,
+      [stageId]: !prev[stageId]
+    }));
+  };
+
+  const toggleStageEnabled = (stageId) => {
+    setStageEnabled(prev => ({
+      ...prev,
+      [stageId]: !prev[stageId]
+    }));
+  };
+
+  // 参数更新方法
+  const updateStageSubParam = (stage, subType, param, value) => {
+    if (subType === 'compression' && param === 'format' && mediaType) {
+      const supportedFormats = getSupportedCompressionFormats(mediaType).map(f => f.value);
+      if (!supportedFormats.includes(value)) {
+        setErrorMessage(`当前媒体类型不支持${value}格式，请选择${mediaType === 'image' ? '图像' : '视频'}格式`);
+        return;
+      }
+    }
+
+    setParameters(prev => ({
       ...prev,
       [stage]: {
         ...prev[stage],
-        [type]: {
-          ...prev[stage][type],
-          params: {
-            ...prev[stage][type].params,
-            [paramKey]: value
-          }
+        [subType]: {
+          ...prev[stage][subType],
+          [param]: value
         }
       }
     }));
   };
 
-  // 选择第三阶段退化类型
-  const handleStage3TypeChange = (type) => {
-    // 初始化选中类型的默认参数
-    const params = {};
-    if (type) {
-      const typeConfig = fileType === 'image' 
-        ? DEGRADATION_CONFIG.image?.[type]
-        : DEGRADATION_CONFIG.video?.[type];
-      
-      if (!typeConfig) {
-        setError(`未找到 ${type} 类型的退化配置`);
-        return;
-      }
-      
-      Object.entries(typeConfig.params).forEach(([paramKey, param]) => {
-        params[paramKey] = param.default;
-      });
-    }
-
-    setDegradationConfig(prev => ({
-      ...prev,
-      stage3: {
-        type,
-        params
-      }
-    }));
-  };
-
-  // 更新第三阶段参数
-  const handleStage3ParamChange = (paramKey, value) => {
-    setDegradationConfig(prev => ({
+  const updateStage3Parameter = (param, value) => {
+    setParameters(prev => ({
       ...prev,
       stage3: {
         ...prev.stage3,
         params: {
           ...prev.stage3.params,
-          [paramKey]: value
+          [param]: value
         }
       }
     }));
   };
 
-  // 验证配置是否完整
-  const validateConfig = () => {
-    // 检查是否有配置缺失错误
-    if (configErrors.length > 0) {
-      return { valid: false, message: '存在缺失的退化配置，请检查配置文件' };
-    }
-
-    // 检查第一、二阶段是否都配置了所有退化类型
-    for (const stage of ['stage1', 'stage2']) {
-      for (const type of STAGE1_2_TYPES) {
-        if (!degradationConfig[stage]?.[type]?.enabled) {
-          return { valid: false, message: `${STAGES.find(s => s.id === stage).title}中的${DEGRADATION_CONFIG.common[type]?.name || type}未启用` };
-        }
+  const handleStage3MediaTypeChange = (mediaType) => {
+    setParameters(prev => ({
+      ...prev,
+      stage3: {
+        ...prev.stage3,
+        mediaType,
+        degradationType: '',
+        params: {}
       }
-    }
-    return { valid: true };
+    }));
   };
 
-  // 处理退化过程
-  const handleProcess = async () => {
-    if (!file || !backendFilePath) {
-      setError('请先上传文件');
+  const handleStage3DegradationTypeChange = (degradationType) => {
+    const params = {};
+    if (parameters.stage3.mediaType && degradationType && DEGRADATION_CONFIG[parameters.stage3.mediaType][degradationType]) {
+      Object.entries(DEGRADATION_CONFIG[parameters.stage3.mediaType][degradationType].params).forEach(([key, paramConfig]) => {
+        params[key] = paramConfig.default;
+      });
+    }
+    
+    setParameters(prev => ({
+      ...prev,
+      stage3: {
+        ...prev.stage3,
+        degradationType,
+        params
+      }
+    }));
+  };
+
+  // 应用退化处理
+  const applyDegradation = async () => {
+    if (!uploadedFile || !mediaPath) {
+      setErrorMessage('请先上传文件');
       return;
     }
 
-    // 验证配置
-    const validation = validateConfig();
-    if (!validation.valid) {
-      setError(validation.message);
-      return;
-    }
-
+    clearError();
     setIsProcessing(true);
     setProgress(0);
-    setError(null);
-    setIsComplete(false);
-
+    
     try {
-      // 构建后端需要的参数格式
-      const degradationParams = {
-        media_path: backendFilePath, // 后端文件相对路径
-        media_type: fileType,
-        first_degradation_config: {
-          name: "composite", // 第一阶段为复合处理
-          params: degradationConfig.stage1 // 包含blur/resample/noise/compression
-        },
-        second_degradation_config: {
-          name: "composite", // 第二阶段为复合处理
-          params: degradationConfig.stage2
-        },
-        third_degradation_config: degradationConfig.stage3.type 
-          ? {
-              name: degradationConfig.stage3.type,
-              params: degradationConfig.stage3.params
-            } 
-          : null
-      };
-
-      // 调用后端复合退化接口
-      const processResult = await processCompositeDegradation(degradationParams);
-      const { processed_path: processedFilePath } = processResult.data;
-
-      // 获取处理后文件的信息
-      const processedMediaInfo = await getMediaInfo(processedFilePath);
-
-      // 更新处理后文件状态
-      setProcessedUrl(getFileUrl(processedFilePath));
-      setIsComplete(true);
-      setMediaInfo(prev => ({
-        ...prev,
-        processed: {
-          name: processedMediaInfo.file_name || `processed_${prev.original.name}`,
-          size: processedMediaInfo.file_size_human,
-          type: prev.original.type,
-          resolution: processedMediaInfo.width && processedMediaInfo.height
-            ? `${processedMediaInfo.width}x${processedMediaInfo.height}`
-            : '未知',
-          codec: fileType === 'image'
-            ? processedMediaInfo.format || '未知'
-            : processedMediaInfo.video_codec || '未知',
-          duration: prev.original.duration,
-          frameRate: prev.original.frameRate,
-          bitRate: processedMediaInfo.bitrate
-            ? `${(processedMediaInfo.bitrate / 1024 / 1024).toFixed(2)}Mbps`
-            : '未知'
-        }
-      }));
-
-      // 模拟进度更新（实际项目可通过WebSocket实时获取进度）
-      const totalSteps = 2 + (degradationConfig.stage3.type ? 1 : 0);
-      let currentProgress = 0;
-      const stepProgress = 100 / totalSteps;
-      
-      // 第一阶段进度
-      setProcessingStage('第一阶段');
-      for (let i = 0; i < 4; i++) {
-        await new Promise(resolve => setTimeout(resolve, 300));
-        currentProgress += stepProgress / 4;
-        setProgress(currentProgress);
+      // 模拟处理过程
+      for (let i = 0; i <= 100; i += 5) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        setProgress(i);
       }
       
-      // 第二阶段进度
-      setProcessingStage('第二阶段');
-      for (let i = 0; i < 4; i++) {
-        await new Promise(resolve => setTimeout(resolve, 300));
-        currentProgress += stepProgress / 4;
-        setProgress(currentProgress);
-      }
+      // 模拟处理成功，使用原图作为处理结果
+      setProcessedPreviewUrl(filePreviewUrl);
       
-      // 第三阶段进度
-      if (degradationConfig.stage3.type) {
-        setProcessingStage('第三阶段');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        currentProgress += stepProgress;
-        setProgress(currentProgress);
-      }
-
-    } catch (err) {
-      setError(`处理失败: ${err.message}`);
+    } catch (error) {
+      setErrorMessage(`处理失败: ${error.message}`);
+      console.error('处理错误:', error);
     } finally {
       setIsProcessing(false);
-      setProcessingStage('');
-      setProgress(100);
     }
   };
 
-  // 保存结果和配置
-  const handleSave = () => {
-    if (!processedUrl || !backendFilePath) {
-      setError('请先完成退化处理');
+  // 重置参数
+  const resetParameters = () => {
+    clearError();
+    const defaultFormat = mediaType === 'video' ? 'h264' : DEGRADATION_CONFIG.common.compression.params.format.default;
+    
+    setParameters({
+      stage1: {
+        blur: {
+          kernel_size: DEGRADATION_CONFIG.common.blur.params.kernel_size.default,
+          sigma: DEGRADATION_CONFIG.common.blur.params.sigma.default
+        },
+        resample: {
+          scale_factor: DEGRADATION_CONFIG.common.resample.params.scale_factor.default,
+          interpolation: DEGRADATION_CONFIG.common.resample.params.interpolation.default
+        },
+        noise: {
+          noise_type: DEGRADATION_CONFIG.common.noise.params.noise_type.default,
+          intensity: DEGRADATION_CONFIG.common.noise.params.intensity.default,
+          density: DEGRADATION_CONFIG.common.noise.params.density.default
+        },
+        compression: {
+          format: defaultFormat,
+          quality: DEGRADATION_CONFIG.common.compression.params.quality.default,
+          bitrate: DEGRADATION_CONFIG.common.compression.params.bitrate.default
+        }
+      },
+      stage2: {
+        blur: {
+          kernel_size: 25,
+          sigma: 3.5
+        },
+        resample: {
+          scale_factor: 0.3,
+          interpolation: DEGRADATION_CONFIG.common.resample.params.interpolation.default
+        },
+        noise: {
+          noise_type: DEGRADATION_CONFIG.common.noise.params.noise_type.default,
+          intensity: 0.2,
+          density: 0.1
+        },
+        compression: {
+          format: defaultFormat,
+          quality: 15,
+          bitrate: 500
+        }
+      },
+      stage3: {
+        mediaType: '',
+        degradationType: '',
+        params: {}
+      }
+    });
+  };
+
+  // 下载退化结果
+  const downloadResult = () => {
+    if (!processedPreviewUrl) {
+      setErrorMessage('没有可下载的结果文件');
       return;
     }
-
-    // 1. 下载处理后文件（通过后端文件接口）
-    const processedFileUrl = getFileUrl(mediaInfo.processed.name);
-    const fileLink = document.createElement('a');
-    fileLink.href = processedFileUrl;
-    fileLink.download = mediaInfo.processed.name;
-    fileLink.click();
-
-    // 2. 保存参数配置
-    const configData = {
-      stages: degradationConfig,
-      fileInfo: {
-        original: mediaInfo.original,
-        processed: mediaInfo.processed
-      },
-      timestamp: new Date().toISOString(),
-      processingSteps: [
-        '第一阶段：模糊 → 下采样 → 噪声 → 编码压缩',
-        '第二阶段：模糊 → 下采样 → 噪声 → 编码压缩',
-        degradationConfig.stage3.type ? `第三阶段：${
-          fileType === 'image' 
-            ? DEGRADATION_CONFIG.image[degradationConfig.stage3.type]?.name || degradationConfig.stage3.type
-            : DEGRADATION_CONFIG.video[degradationConfig.stage3.type]?.name || degradationConfig.stage3.type
-        }` : '未使用第三阶段'
-      ]
-    };
-    
-    const configBlob = new Blob(
-      [JSON.stringify(configData, null, 2)],
-      { type: 'application/json' }
-    );
-    const configUrl = URL.createObjectURL(configBlob);
-    
-    const configLink = document.createElement('a');
-    configLink.href = configUrl;
-    configLink.download = `degradation_config_${Date.now()}.json`;
-    configLink.click();
-
-    // 清理
-    URL.revokeObjectURL(configUrl);
+    const link = document.createElement('a');
+    link.href = processedPreviewUrl;
+    link.download = `degraded_${uploadedFile.name}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
-  // 格式化文件大小
-  function formatBytes(bytes, decimals = 2) {
+  // 辅助方法
+  const getFileIcon = (file) => {
+    if (file.type.startsWith('image/')) {
+      return <FileImage className="h-5 w-5 text-cyan-400" />;
+    } else if (file.type.startsWith('video/')) {
+      return <FileVideo className="h-5 w-5 text-cyan-400" />;
+    }
+    return <Upload className="h-5 w-5 text-cyan-400" />;
+  };
+
+  const formatFileSize = (bytes) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-  }
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
 
   // 渲染参数控件
-  const renderParamControl = (paramKey, paramConfig, value, onChange) => {
-    // 检查参数配置是否存在
-    if (!paramConfig) {
-      return <div className="text-red-500 text-sm">缺失参数配置: {paramKey}</div>;
+  const renderSubParameterControl = (stage, subType, paramKey, paramConfig) => {
+    const value = parameters[stage][subType][paramKey];
+    
+    if (subType === 'compression' && paramKey === 'format') {
+      const supportedFormats = getSupportedCompressionFormats(mediaType || 'image');
+      
+      return (
+        <div className="mb-2" key={paramKey}>
+          <label className="block text-xs text-slate-400 mb-1">{paramConfig.description}</label>
+          <select 
+            className="w-full p-1.5 bg-slate-800 border border-slate-600 rounded text-xs text-white focus:border-cyan-400 transition-colors"
+            value={value}
+            onChange={(e) => updateStageSubParam(stage, subType, paramKey, e.target.value)}
+          >
+            {supportedFormats.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      );
     }
-
+    
     if (paramConfig.type === 'select') {
       return (
-        <div className="mb-3">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            {paramConfig.description}
-          </label>
-          <select
+        <div className="mb-2" key={paramKey}>
+          <label className="block text-xs text-slate-400 mb-1">{paramConfig.description}</label>
+          <select 
+            className="w-full p-1.5 bg-slate-800 border border-slate-600 rounded text-xs text-white focus:border-cyan-400 transition-colors"
             value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={isProcessing}
+            onChange={(e) => updateStageSubParam(stage, subType, paramKey, e.target.value)}
           >
             {paramConfig.options.map(option => (
               <option key={option.value} value={option.value}>
@@ -478,604 +475,637 @@ const ThreeStageDegradationSystem = () => {
           </select>
         </div>
       );
-    } else {
-      return (
-        <div className="mb-3">
-          <div className="flex justify-between mb-1">
-            <label className="text-sm font-medium text-gray-700">
-              {paramConfig.description}
-            </label>
-            <span className="text-sm text-gray-500">
-              {value}
-              {paramConfig.unit || ''}
-            </span>
-          </div>
-          <input
-            type="range"
-            min={paramConfig.min}
-            max={paramConfig.max}
-            step={paramConfig.step}
-            value={value}
-            onChange={(e) => {
-              const val = paramConfig.type === 'int' 
-                ? parseInt(e.target.value) 
-                : parseFloat(e.target.value);
-              onChange(val);
-            }}
-            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-            disabled={isProcessing}
-          />
-          <div className="flex justify-between text-xs text-gray-500 mt-1">
-            <span>{paramConfig.min}{paramConfig.unit || ''}</span>
-            <span>{paramConfig.max}{paramConfig.unit || ''}</span>
-          </div>
-        </div>
-      );
     }
-  };
-
-  // 渲染第一、二阶段的退化配置
-  const renderStage1_2 = (stage) => {
-    // 如果有配置错误，显示提示
-    if (configErrors.length > 0) {
-      return (
-        <div className="bg-red-50 border border-red-200 p-4 rounded-md">
-          <h4 className="text-red-700 font-medium mb-2 flex items-center">
-            <AlertCircle className="h-4 w-4 mr-1" />
-            配置错误
-          </h4>
-          <ul className="text-sm text-red-600 space-y-1">
-            {configErrors.map((err, i) => (
-              <li key={i}>- {err}</li>
-            ))}
-          </ul>
-        </div>
-      );
-    }
-
+    
     return (
-      <div className="space-y-6">
-        <p className="text-sm text-gray-600">
-          本阶段将依次应用以下退化处理：模糊 → 下采样 → 噪声 → 编码压缩
-        </p>
-        
-        {STAGE1_2_TYPES.map((type, index) => {
-          // 检查配置是否存在
-          const typeConfig = DEGRADATION_CONFIG.common?.[type];
-          if (!typeConfig) {
-            return (
-              <div key={type} className="border border-red-200 bg-red-50 rounded-lg p-4">
-                <p className="text-red-600 text-sm">
-                  缺失退化类型配置: {type}（请检查 DEGRADATION_CONFIG.common）
-                </p>
-              </div>
-            );
-          }
-          
-          const stageConfig = degradationConfig[stage]?.[type] || {};
-          
-          return (
-            <div key={type} className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center">
-                  <div className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-600 text-sm font-medium mr-2">
-                    {index + 1}
-                  </div>
-                  <h4 className="font-medium text-gray-900">{typeConfig.name}</h4>
-                </div>
-                <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
-                  {typeConfig.method || '默认方法'}
-                </span>
-              </div>
-              
-              <div className="pl-8">
-                {Object.entries(typeConfig.params).map(([paramKey, paramConfig]) => (
-                  renderParamControl(
-                    paramKey,
-                    paramConfig,
-                    stageConfig.params?.[paramKey] || paramConfig.default,
-                    (value) => handleParamChange(stage, type, paramKey, value)
-                  )
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <SliderControl
+        key={paramKey}
+        label={paramConfig.description}
+        value={value}
+        min={paramConfig.min}
+        max={paramConfig.max}
+        step={paramConfig.step}
+        unit={paramConfig.unit || ''}
+        onChange={(val) => updateStageSubParam(stage, subType, paramKey, val)}
+        color={stage === 'stage1' ? 'cyan' : 'red'}
+      />
     );
   };
 
-  // 渲染第三阶段的退化配置
-  const renderStage3 = () => {
-    if (!fileType) {
-      return (
-        <div className="p-6 text-center text-gray-500">
-          请先上传文件以配置第三阶段退化
-        </div>
-      );
-    }
-
-    const availableTypes = fileType === 'image' 
-      ? DEGRADATION_CONFIG.image 
-      : DEGRADATION_CONFIG.video;
+  const renderStage3ParameterControl = (paramKey, paramConfig) => {
+    const value = parameters.stage3.params[paramKey];
     
-    const currentType = degradationConfig.stage3?.type;
-    const typeConfig = currentType 
-      ? (fileType === 'image' ? DEGRADATION_CONFIG.image[currentType] : DEGRADATION_CONFIG.video[currentType])
-      : null;
-
-    return (
-      <div className="space-y-4">
-        <p className="text-sm text-gray-600">
-          {fileType === 'image' 
-            ? '针对图像，请选择一种降质问题' 
-            : '针对视频，请选择一种降质问题'}
-        </p>
-        
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            选择退化类型
-          </label>
-          <select
-            value={currentType || ''}
-            onChange={(e) => handleStage3TypeChange(e.target.value || null)}
-            className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={isProcessing}
+    if (paramConfig.type === 'select') {
+      return (
+        <div className="mb-2" key={paramKey}>
+          <label className="block text-xs text-slate-400 mb-1">{paramConfig.description}</label>
+          <select 
+            className="w-full p-1.5 bg-slate-800 border border-slate-600 rounded text-xs text-white focus:border-purple-400 transition-colors"
+            value={value}
+            onChange={(e) => updateStage3Parameter(paramKey, e.target.value)}
           >
-            <option value="">请选择...</option>
-            {Object.entries(availableTypes).map(([typeKey, typeInfo]) => (
-              <option key={typeKey} value={typeKey}>
-                {typeInfo.name} ({typeInfo.method})
+            {paramConfig.options.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
         </div>
-        
-        {currentType && typeConfig && (
-          <div className="border border-gray-200 rounded-lg p-4">
-            <h4 className="font-medium text-gray-900 mb-3">{typeConfig.name}</h4>
-            
-            {Object.entries(typeConfig.params).map(([paramKey, paramConfig]) => (
-              renderParamControl(
-                paramKey,
-                paramConfig,
-                degradationConfig.stage3.params?.[paramKey] || paramConfig.default,
-                (value) => handleStage3ParamChange(paramKey, value)
-              )
-            ))}
-          </div>
-        )}
+      );
+    }
+    
+    return (
+      <SliderControl
+        key={paramKey}
+        label={paramConfig.description}
+        value={value}
+        min={paramConfig.min}
+        max={paramConfig.max}
+        step={paramConfig.step}
+        unit={paramConfig.unit || ''}
+        onChange={(val) => updateStage3Parameter(paramKey, val)}
+        color="purple"
+      />
+    );
+  };
+
+  // 滑块控件组件
+  const SliderControl = ({ label, value, min, max, step, onChange, unit = '', color = 'cyan' }) => {
+    const trackColors = {
+      cyan: 'rgb(0 200 255)',
+      red: 'rgb(236 72 153)',
+      purple: 'rgb(139 92 246)'
+    };
+    const trackColor = trackColors[color] || trackColors.cyan;
+
+    return (
+      <div className="mb-2">
+        <div className="flex justify-between items-center mb-1">
+          <span className="text-xs text-slate-400">{label}</span>
+          <span className="text-xs font-medium text-white">{value}{unit}</span>
+        </div>
+        <div className="relative">
+          <input
+            type="range"
+            min={min}
+            max={max}
+            step={step}
+            value={value}
+            onChange={(e) => onChange(parseFloat(e.target.value))}
+            className="w-full h-1.5 bg-slate-700 rounded appearance-none cursor-pointer slider"
+            style={{
+              background: `linear-gradient(to right, ${trackColor} 0%, ${trackColor} ${((value - min) / (max - min)) * 100}%, rgb(71 85 105) ${((value - min) / (max - min)) * 100}%, rgb(71 85 105) 100%)`
+            }} 
+          />
+        </div>
       </div>
     );
   };
 
-  // 渲染阶段内容
-  const renderStageContent = () => {
-    switch (activeStage) {
-      case 'stage1':
-      case 'stage2':
-        return renderStage1_2(activeStage);
-      case 'stage3':
-        return renderStage3();
-      default:
-        return null;
-    }
-  };
+  // 阶段面板组件
+  const StagePanel = ({ 
+    stageId, 
+    title, 
+    subtitle, 
+    icon: Icon, 
+    color = 'cyan',
+    isOptional = false,
+    children 
+  }) => {
+    const isExpanded = expandedStages[stageId];
+    const isEnabled = stageEnabled[stageId];
+    
+    const colorClasses = {
+      cyan: {
+        border: 'border-cyan-400',
+        bg: 'bg-cyan-900/20',
+        text: 'text-cyan-400',
+        icon: 'text-cyan-400'
+      },
+      red: {
+        border: 'border-pink-500',
+        bg: 'bg-pink-900/20',
+        text: 'text-pink-400',
+        icon: 'text-pink-400'
+      },
+      purple: {
+        border: 'border-purple-500',
+        bg: 'bg-purple-900/20',
+        text: 'text-purple-400',
+        icon: 'text-purple-400'
+      }
+    };
 
-  // 渲染阶段导航
-  const renderStageNavigation = () => {
     return (
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          {STAGES.map((stage, index) => {
-            const isActive = activeStage === stage.id;
-            const isCompleted = progress > (index + 1) * 33 && isProcessing;
-            
-            return (
-              <React.Fragment key={stage.id}>
-              <button
-                 onClick={() => !isProcessing && setActiveStage(stage.id)}
-                 disabled={isProcessing}
-                 style={{ outline: 'none', border: 'none' }}
-                 className={`flex flex-col items-center outline-none focus:outline-none border-0 focus:border-0 active:outline-none hover:outline-none rounded-lg p-2 transition-all duration-200 ${
-                 isActive 
-                   ? 'text-blue-600' 
-                   : isCompleted 
-                    ? 'text-green-600' 
-                    : 'text-gray-500'
-               }`}
-              >
-  <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 transition-colors duration-200 ${
-    isActive 
-      ? 'bg-blue-100' 
-      : isCompleted 
-        ? 'bg-green-100' 
-        : 'bg-gray-100'
-  }`}>
-    {isCompleted ? (
-      <Check className="w-5 h-5" />
-    ) : (
-      <span>{index + 1}</span>
-    )}
-  </div>
-  <span className="text-xs font-medium text-center">{stage.title.split('（')[0]}</span>
-  {stage.required && (
-    <span className="text-xs text-red-500">必选</span>
-  )}
-</button>
-                
-                {/* 连接线 */}
-                {index < STAGES.length - 1 && (
-                  <div className={`flex-1 h-1 mx-2 ${
-                    activeStage === STAGES[index + 1].id || isCompleted
-                      ? 'bg-blue-600'
-                      : 'bg-gray-300'
-                  }`} />
+      <div className="mb-3">
+        <div className={`border rounded-lg overflow-hidden transition-all duration-300 ${
+          isEnabled ? colorClasses[color].border : 'border-slate-600'
+        } bg-slate-800/80 backdrop-blur-sm`}>
+          <div 
+            className={`p-2 cursor-pointer transition-all duration-300 ${
+              isEnabled ? colorClasses[color].bg : 'bg-slate-700/50'
+            }`}
+            onClick={() => toggleStage(stageId)}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div className={`p-1.5 rounded ${isEnabled ? `bg-gradient-to-r from-${color}-400 to-${color === 'cyan' ? 'blue' : color === 'red' ? 'pink' : 'indigo'}-500` : 'bg-slate-600'}`}>
+                  <Icon className="h-3 w-3 text-white" />
+                </div>
+                <div>
+                  <h3 className={`font-medium text-sm ${isEnabled ? 'text-white' : 'text-slate-400'}`}>
+                    {title}
+                  </h3>
+                  <p className={`text-xs ${isEnabled ? colorClasses[color].text : 'text-slate-500'}`}>
+                    {subtitle}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                {isOptional && (
+                  <div className="flex items-center space-x-1">
+                    <span className="text-xs text-slate-400">启用</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleStageEnabled(stageId);
+                      }}
+                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
+                        isEnabled ? 'bg-gradient-to-r from-purple-500 to-indigo-500' : 'bg-slate-600'
+                      }`}
+                    >
+                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                        isEnabled ? 'translate-x-3.5' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
                 )}
-              </React.Fragment>
-            );
-          })}
+                <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                  {isExpanded ? 
+                    <ChevronUp className={`h-3 w-3 ${isEnabled ? colorClasses[color].icon : 'text-slate-500'}`} /> :
+                    <ChevronDown className={`h-3 w-3 ${isEnabled ? colorClasses[color].icon : 'text-slate-500'}`} />
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {isExpanded && isEnabled && (
+            <div className="p-3 bg-slate-800/50">
+              {children}
+            </div>
+          )}
         </div>
       </div>
     );
   };
 
   return (
-    <div className="pt-24 pb-16">
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* 错误提示 */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-6 flex items-center">
-            <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
-            <span>{error}</span>
-            <button 
-              onClick={() => setError(null)} 
-              className="ml-auto text-red-500 hover:text-red-700"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        )}
-
-        {/* 顶部展示图 */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-md overflow-hidden mb-8">
-          <div className="p-8 text-center text-white">
-            <h2 className="text-2xl md:text-3xl font-bold mb-2">三阶段复合媒体退化系统</h2>
-            <p className="max-w-2xl mx-auto opacity-90">
-              按照指定顺序依次应用多阶段退化处理，支持图像和视频文件，可配置详细的退化参数
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+      {/* 背景效果 */}
+      <div className="fixed inset-0 bg-gradient-to-br from-cyan-900/10 via-transparent to-purple-900/10"></div>
+      <div className="fixed inset-0 bg-[radial-gradient(circle_at_10%_20%,rgba(28,58,111,0.1)_0%,transparent_15%),radial-gradient(circle_at_90%_80%,rgba(0,229,255,0.05)_0%,transparent_20%)]"></div>
+      
+      <div className="relative z-10">
+        <div className="max-w-7xl mx-auto p-4">
+          {/* 页面标题 */}
+          <div className="text-center mb-6">
+            <h1 className="text-3xl font-bold mb-2 bg-gradient-to-r from-cyan-400 via-purple-400 to-white bg-clip-text text-transparent">
+              高阶退化模型可视化
+            </h1>
+            <p className="text-sm text-slate-300">
+              通过(2+[1])模型模拟广电老旧视频的完整退化过程，生成符合真实特征的降质样本
             </p>
           </div>
-        </div>
 
-        {/* 文件上传区域 */}
-        <div className="bg-white rounded-xl shadow-md p-6 mb-8">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-            <Upload className="h-5 w-5 mr-2 text-blue-600" />
-            文件上传
-          </h2>
-          
-          <div 
-            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-              file ? 'border-green-300 bg-green-50' : 'border-gray-300 hover:border-blue-400'
-            }`}
-          >
+          {/* 错误和成功提示 */}
+          {errorMessage && (
+            <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-2 mb-3 flex items-center">
+              <AlertCircle className="h-4 w-4 text-red-400 mr-2" />
+              <p className="text-red-300 text-xs flex-1">{errorMessage}</p>
+              <button onClick={clearError} className="ml-2 text-red-400 hover:text-red-300">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="bg-green-900/30 border border-green-500/50 rounded-lg p-2 mb-3 flex items-center">
+              <Info className="h-4 w-4 text-green-400 mr-2" />
+              <p className="text-green-300 text-xs">{successMessage}</p>
+            </div>
+          )}
+
+          {/* 文件上传区域 - 横向布局 */}
+          <div className="bg-slate-800/80 backdrop-blur-sm border border-cyan-400/20 rounded-lg p-4 mb-4">
             <input
-              ref={fileInputRef}
               type="file"
+              ref={fileInputRef}
+              onChange={handleFileInputChange}
               accept="image/*,video/*"
-              onChange={handleFileUpload}
               className="hidden"
             />
             
-            {!file ? (
-              <>
-                <div className="flex justify-center mb-4">
-                  <Image className="h-12 w-12 text-gray-400 mr-3" />
-                  <Video className="h-12 w-12 text-gray-400" />
-                </div>
-                <p className="text-gray-600 mb-4">拖放文件到此处或点击选择</p>
-                <button
-                  onClick={() => fileInputRef.current.click()}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
-                  disabled={isProcessing}
+            <div className="flex gap-4 items-center">
+              {!uploadedFile ? (
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onClick={handleUploadClick}
+                  className={`flex-1 border-2 border-dashed rounded-lg p-6 text-center transition-all duration-300 cursor-pointer ${
+                    isDragOver
+                      ? 'border-cyan-400 bg-cyan-400/10'
+                      : 'border-cyan-400/30 hover:border-cyan-400 hover:bg-cyan-400/5'
+                  }`}
+                  disabled={isUploading}
                 >
-                  选择图像/视频文件
-                </button>
-              </>
-            ) : (
-              <div className="text-left">
-                <div className="flex items-start">
-                  <div className="flex-shrink-0">
-                    {fileType === 'image' ? (
-                      <Image className="h-10 w-10 text-green-500" />
-                    ) : (
-                      <Video className="h-10 w-10 text-green-500" />
-                    )}
+                  <div className="flex items-center justify-center gap-4">
+                    <Upload className="h-8 w-8 text-cyan-400" />
+                    <div className="text-left">
+                      <h3 className="text-base font-medium text-white mb-1">上传原始媒体文件</h3>
+                      <p className="text-sm text-slate-400">点击或拖放图像/视频文件到此处</p>
+                      <p className="text-xs text-slate-500 mt-1">支持格式: JPG, PNG, MP4, MOV, AVI, MKV, WEBM (最大100MB)</p>
+                    </div>
                   </div>
-                  <div className="ml-4">
-                    <h3 className="text-sm font-medium text-gray-900">{file.name}</h3>
-                    <p className="text-sm text-gray-500">
-                      {fileType === 'image' ? '图像文件' : '视频文件'} · {mediaInfo.original.size}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setFile(null);
-                      setFileType(null);
-                      setOriginalUrl(null);
-                      setProcessedUrl(null);
-                      setIsComplete(false);
-                      setBackendFilePath(null);
-                    }}
-                    className="ml-auto text-gray-400 hover:text-gray-500"
-                    disabled={isProcessing}
-                  >
-                    <Trash2 className="h-5 w-5" />
-                  </button>
                 </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 阶段导航 */}
-        {renderStageNavigation()}
-
-        {/* 阶段配置区域 */}
-        <div className="bg-white rounded-xl shadow-md p-6 mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-gray-800">
-              {STAGES.find(s => s.id === activeStage).title}
-            </h2>
-            <div className="flex space-x-2">
-              <button
-                onClick={() => {
-                  const currentIndex = STAGES.findIndex(s => s.id === activeStage);
-                  if (currentIndex > 0) {
-                    setActiveStage(STAGES[currentIndex - 1].id);
-                  }
-                }}
-                disabled={activeStage === 'stage1' || isProcessing}
-                className={`p-2 rounded-md ${
-                  activeStage === 'stage1' || isProcessing
-                    ? 'text-gray-300 cursor-not-allowed'
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
-              <button
-                onClick={() => {
-                  const currentIndex = STAGES.findIndex(s => s.id === activeStage);
-                  if (currentIndex < STAGES.length - 1) {
-                    setActiveStage(STAGES[currentIndex + 1].id);
-                  }
-                }}
-                disabled={activeStage === 'stage3' || isProcessing}
-                className={`p-2 rounded-md ${
-                  activeStage === 'stage3' || isProcessing
-                    ? 'text-gray-300 cursor-not-allowed'
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                <ChevronRight className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-          
-          {renderStageContent()}
-        </div>
-
-        {/* 处理按钮 */}
-        {file && (
-          <div className="flex justify-center mb-8">
-            <button
-              onClick={handleProcess}
-              disabled={isProcessing || isComplete}
-              className={`px-8 py-3 rounded-md font-medium transition-colors ${
-                isProcessing
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
-            >
-              {isProcessing ? (
-                <>
-                  <RefreshCw className="h-5 w-5 mr-2 inline animate-spin" />
-                  处理中：{processingStage} ({Math.round(progress)}%)
-                </>
               ) : (
-                <>开始三阶段退化处理</>
+                <div className="flex-1 bg-slate-700/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3 flex-1">
+                      <div className="flex-shrink-0">
+                        {getFileIcon(uploadedFile)}
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-white truncate" title={uploadedFile.name}>
+                          {uploadedFile.name}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {uploadedFile.type} • {formatFileSize(uploadedFile.size)}
+                        </p>
+                        {isUploading && (
+                          <div className="mt-1">
+                            <div className="h-1 bg-slate-600 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-300"
+                                style={{ width: `${uploadProgress}%` }}
+                              ></div>
+                            </div>
+                            <p className="text-xs text-slate-400 mt-0.5">{uploadProgress}%</p>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {!isUploading && (
+                        <button
+                          onClick={handleRemoveFile}
+                          className="p-1 text-slate-400 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )}
-            </button>
-          </div>
-        )}
-
-        {/* 处理进度条 */}
-        {isProcessing && (
-          <div className="bg-white rounded-xl shadow-md p-6 mb-8">
-            <div className="mb-2 flex justify-between items-center">
-              <span className="text-sm font-medium text-gray-700">处理进度</span>
-              <span className="text-sm text-gray-500">{Math.round(progress)}%</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2.5">
-              <div
-                className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              ></div>
-            </div>
-            <p className="mt-2 text-sm text-gray-500">当前阶段：{processingStage}</p>
-          </div>
-        )}
-
-        {/* 结果对比展示 */}
-        {isComplete && (
-          <div className="bg-white rounded-xl shadow-md p-6">
-            <h2 className="text-lg font-semibold text-gray-800 mb-6 flex items-center">
-              <Eye className="h-5 w-5 mr-2 text-blue-600" />
-              退化处理结果对比
-            </h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* 原始文件 */}
-              <div>
-                <h3 className="font-medium text-gray-900 mb-3 flex items-center">
-                  <span>原始文件</span>
-                  <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                    {mediaInfo.original.type}
-                  </span>
-                </h3>
-                <div className="bg-gray-100 rounded-lg overflow-hidden mb-4">
-                  {fileType === 'image' ? (
-                    <img
-                      src={originalUrl}
-                      alt="Original"
-                      className="w-full h-64 object-cover"
-                    />
-                  ) : (
-                    <video
-                      src={originalUrl}
-                      controls
-                      className="w-full h-64 object-cover"
-                    />
-                  )}
-                </div>
-                
-                {/* 原始文件信息 */}
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center">
-                    <Info className="h-4 w-4 mr-1" />
-                    文件信息
-                  </h4>
-                  <ul className="space-y-1 text-sm">
-                    <li className="flex justify-between">
-                      <span className="text-gray-600">名称:</span>
-                      <span className="text-gray-900">{mediaInfo.original.name}</span>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-gray-600">大小:</span>
-                      <span className="text-gray-900">{mediaInfo.original.size}</span>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-gray-600">分辨率:</span>
-                      <span className="text-gray-900">{mediaInfo.original.resolution}</span>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-gray-600">编码格式:</span>
-                      <span className="text-gray-900">{mediaInfo.original.codec}</span>
-                    </li>
-                    {fileType === 'video' && (
-                      <>
-                        <li className="flex justify-between">
-                          <span className="text-gray-600">时长:</span>
-                          <span className="text-gray-900">{mediaInfo.original.duration}</span>
-                        </li>
-                        <li className="flex justify-between">
-                          <span className="text-gray-600">帧率:</span>
-                          <span className="text-gray-900">{mediaInfo.original.frameRate}</span>
-                        </li>
-                        <li className="flex justify-between">
-                          <span className="text-gray-600">码率:</span>
-                          <span className="text-gray-900">{mediaInfo.original.bitRate}</span>
-                        </li>
-                      </>
-                    )}
-                  </ul>
-                </div>
-              </div>
               
-              {/* 处理后文件 */}
-              <div>
-                <h3 className="font-medium text-gray-900 mb-3 flex items-center">
-                  <span>处理后文件</span>
-                  <span className="ml-2 text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded">
-                    已完成
-                  </span>
-                </h3>
-                <div className="bg-gray-100 rounded-lg overflow-hidden mb-4">
-                  {fileType === 'image' ? (
-                    <img
-                      src={processedUrl}
-                      alt="Processed"
-                      className="w-full h-64 object-cover"
-                    />
-                  ) : (
-                    <video
-                      src={processedUrl}
-                      controls
-                      className="w-full h-64 object-cover"
-                    />
-                  )}
-                </div>
+              {/* 控制按钮 */}
+              <div className="flex space-x-2">
+                <button
+                  onClick={applyDegradation}
+                  disabled={isProcessing || isUploading || !mediaPath}
+                  className={`flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-all duration-300 ${
+                    (isProcessing || isUploading || !mediaPath)
+                      ? 'bg-slate-600 cursor-not-allowed text-slate-400' 
+                      : 'bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-500 hover:to-blue-600 text-white shadow-lg'
+                  }`}
+                >
+                  <Play className="h-4 w-4 mr-1" />
+                  <span className="text-sm">{isProcessing ? `处理中 ${progress}%` : '开始处理'}</span>
+                </button>
                 
-                {/* 处理后文件信息 */}
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center">
-                    <Info className="h-4 w-4 mr-1" />
-                    文件信息
-                  </h4>
-                  <ul className="space-y-1 text-sm">
-                    <li className="flex justify-between">
-                      <span className="text-gray-600">名称:</span>
-                      <span className="text-gray-900">{mediaInfo.processed.name}</span>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-gray-600">大小:</span>
-                      <span className="text-gray-900">{mediaInfo.processed.size}</span>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-gray-600">分辨率:</span>
-                      <span className="text-gray-900">{mediaInfo.processed.resolution}</span>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-gray-600">编码格式:</span>
-                      <span className="text-gray-900">{mediaInfo.processed.codec}</span>
-                    </li>
-                    {fileType === 'video' && (
-                      <>
-                        <li className="flex justify-between">
-                          <span className="text-gray-600">时长:</span>
-                          <span className="text-gray-900">{mediaInfo.processed.duration}</span>
-                        </li>
-                        <li className="flex justify-between">
-                          <span className="text-gray-600">帧率:</span>
-                          <span className="text-gray-900">{mediaInfo.processed.frameRate}</span>
-                        </li>
-                        <li className="flex justify-between">
-                          <span className="text-gray-600">码率:</span>
-                          <span className="text-gray-900">{mediaInfo.processed.bitRate}</span>
-                        </li>
-                      </>
-                    )}
-                  </ul>
+                <button
+                  onClick={resetParameters}
+                  disabled={isProcessing || isUploading}
+                  className="px-3 py-2 border border-cyan-400 text-cyan-400 rounded-lg hover:bg-cyan-400/10 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="重置参数"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </button>
+                
+                <button 
+                  onClick={downloadResult}
+                  disabled={!processedPreviewUrl}
+                  className={`flex items-center px-3 py-2 rounded-lg transition-all duration-300 ${
+                    processedPreviewUrl
+                      ? 'bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700'
+                      : 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                  }`}
+                  title="下载结果"
+                >
+                  <Download className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-4">
+            {/* 左侧参数配置面板 */}
+            <div className="w-1/2">
+              <div className="bg-slate-800/80 backdrop-blur-sm border border-cyan-400/20 rounded-lg p-4">
+                <h2 className="text-lg font-semibold text-white mb-4 flex items-center">
+                  <div className="w-6 h-6 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-lg flex items-center justify-center mr-2">
+                    <Sliders className="h-3 w-3 text-white" />
+                  </div>
+                  退化参数配置
+                </h2>
+
+                {/* 第一阶段（复合退化） */}
+                <StagePanel
+                  stageId="stage1"
+                  title="第一阶段退化"
+                  subtitle="必选 · 基础退化层（复合类型）"
+                  icon={Layers}
+                  color="cyan"
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <h4 className="text-xs font-medium text-white mb-2 flex items-center">
+                        <div className="w-1 h-1 bg-cyan-400 rounded-full mr-1"></div>
+                        {DEGRADATION_CONFIG.common.blur.name}
+                      </h4>
+                      {renderSubParameterControl('stage1', 'blur', 'kernel_size', DEGRADATION_CONFIG.common.blur.params.kernel_size)}
+                      {renderSubParameterControl('stage1', 'blur', 'sigma', DEGRADATION_CONFIG.common.blur.params.sigma)}
+                    </div>
+                    
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <h4 className="text-xs font-medium text-white mb-2 flex items-center">
+                        <div className="w-1 h-1 bg-cyan-400 rounded-full mr-1"></div>
+                        {DEGRADATION_CONFIG.common.resample.name}
+                      </h4>
+                      {renderSubParameterControl('stage1', 'resample', 'scale_factor', DEGRADATION_CONFIG.common.resample.params.scale_factor)}
+                      {renderSubParameterControl('stage1', 'resample', 'interpolation', DEGRADATION_CONFIG.common.resample.params.interpolation)}
+                    </div>
+                    
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <h4 className="text-xs font-medium text-white mb-2 flex items-center">
+                        <div className="w-1 h-1 bg-cyan-400 rounded-full mr-1"></div>
+                        {DEGRADATION_CONFIG.common.noise.name}
+                      </h4>
+                      {renderSubParameterControl('stage1', 'noise', 'noise_type', DEGRADATION_CONFIG.common.noise.params.noise_type)}
+                      {renderSubParameterControl('stage1', 'noise', 'intensity', DEGRADATION_CONFIG.common.noise.params.intensity)}
+                      {parameters.stage1.noise.noise_type === 'salt_pepper' && 
+                        renderSubParameterControl('stage1', 'noise', 'density', DEGRADATION_CONFIG.common.noise.params.density)
+                      }
+                    </div>
+                    
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <h4 className="text-xs font-medium text-white mb-2 flex items-center">
+                        <div className="w-1 h-1 bg-cyan-400 rounded-full mr-1"></div>
+                        {DEGRADATION_CONFIG.common.compression.name}
+                      </h4>
+                      {renderSubParameterControl('stage1', 'compression', 'format', DEGRADATION_CONFIG.common.compression.params.format)}
+                      {renderSubParameterControl('stage1', 'compression', 'quality', DEGRADATION_CONFIG.common.compression.params.quality)}
+                      {renderSubParameterControl('stage1', 'compression', 'bitrate', DEGRADATION_CONFIG.common.compression.params.bitrate)}
+                    </div>
+                  </div>
+                </StagePanel>
+
+                {/* 第二阶段（复合退化） */}
+                <StagePanel
+                  stageId="stage2"
+                  title="第二阶段退化"
+                  subtitle="必选 · 累积退化层（复合类型）"
+                  icon={Layers}
+                  color="red"
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <h4 className="text-xs font-medium text-white mb-2 flex items-center">
+                        <div className="w-1 h-1 bg-pink-400 rounded-full mr-1"></div>
+                        {DEGRADATION_CONFIG.common.blur.name}
+                      </h4>
+                      {renderSubParameterControl('stage2', 'blur', 'kernel_size', DEGRADATION_CONFIG.common.blur.params.kernel_size)}
+                      {renderSubParameterControl('stage2', 'blur', 'sigma', DEGRADATION_CONFIG.common.blur.params.sigma)}
+                    </div>
+                    
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <h4 className="text-xs font-medium text-white mb-2 flex items-center">
+                        <div className="w-1 h-1 bg-pink-400 rounded-full mr-1"></div>
+                        {DEGRADATION_CONFIG.common.resample.name}
+                      </h4>
+                      {renderSubParameterControl('stage2', 'resample', 'scale_factor', DEGRADATION_CONFIG.common.resample.params.scale_factor)}
+                      {renderSubParameterControl('stage2', 'resample', 'interpolation', DEGRADATION_CONFIG.common.resample.params.interpolation)}
+                    </div>
+                    
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <h4 className="text-xs font-medium text-white mb-2 flex items-center">
+                        <div className="w-1 h-1 bg-pink-400 rounded-full mr-1"></div>
+                        {DEGRADATION_CONFIG.common.noise.name}
+                      </h4>
+                      {renderSubParameterControl('stage2', 'noise', 'noise_type', DEGRADATION_CONFIG.common.noise.params.noise_type)}
+                      {renderSubParameterControl('stage2', 'noise', 'intensity', DEGRADATION_CONFIG.common.noise.params.intensity)}
+                      {parameters.stage2.noise.noise_type === 'salt_pepper' && 
+                        renderSubParameterControl('stage2', 'noise', 'density', DEGRADATION_CONFIG.common.noise.params.density)
+                      }
+                    </div>
+                    
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <h4 className="text-xs font-medium text-white mb-2 flex items-center">
+                        <div className="w-1 h-1 bg-pink-400 rounded-full mr-1"></div>
+                        {DEGRADATION_CONFIG.common.compression.name}
+                      </h4>
+                      {renderSubParameterControl('stage2', 'compression', 'format', DEGRADATION_CONFIG.common.compression.params.format)}
+                      {renderSubParameterControl('stage2', 'compression', 'quality', DEGRADATION_CONFIG.common.compression.params.quality)}
+                      {renderSubParameterControl('stage2', 'compression', 'bitrate', DEGRADATION_CONFIG.common.compression.params.bitrate)}
+                    </div>
+                  </div>
+                </StagePanel>
+
+                {/* 第三阶段（可选单一退化） */}
+                <StagePanel
+                  stageId="stage3"
+                  title="第三阶段退化"
+                  subtitle="可选 · 特定场景退化（单一类型）"
+                  icon={Cog}
+                  color="purple"
+                  isOptional={true}
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <h4 className="text-xs font-medium text-white mb-2 flex items-center">
+                        <div className="w-1 h-1 bg-purple-400 rounded-full mr-1"></div>
+                        媒体类型选择
+                      </h4>
+                      <div className="mb-2">
+                        <label className="block text-xs text-slate-400 mb-1">媒体类型</label>
+                        <select 
+                          className="w-full p-1.5 bg-slate-800 border border-slate-600 rounded text-xs text-white focus:border-purple-400 transition-colors"
+                          value={parameters.stage3.mediaType}
+                          onChange={(e) => handleStage3MediaTypeChange(e.target.value)}
+                        >
+                          <option value="">选择媒体类型</option>
+                          <option value="image">图像退化</option>
+                          <option value="video">视频退化</option>
+                        </select>
+                      </div>
+                      
+                      {parameters.stage3.mediaType && (
+                        <div className="mb-2">
+                          <label className="block text-xs text-slate-400 mb-1">退化类型</label>
+                          <select 
+                            className="w-full p-1.5 bg-slate-800 border border-slate-600 rounded text-xs text-white focus:border-purple-400 transition-colors"
+                            value={parameters.stage3.degradationType}
+                            onChange={(e) => handleStage3DegradationTypeChange(e.target.value)}
+                          >
+                            <option value="">选择退化类型</option>
+                            {Object.entries(DEGRADATION_CONFIG[parameters.stage3.mediaType] || {}).map(([key, config]) => (
+                              <option key={key} value={key}>{config.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <h4 className="text-xs font-medium text-white mb-2 flex items-center">
+                        <div className="w-1 h-1 bg-purple-400 rounded-full mr-1"></div>
+                        退化参数
+                      </h4>
+                      {parameters.stage3.mediaType && 
+                       parameters.stage3.degradationType && 
+                       DEGRADATION_CONFIG[parameters.stage3.mediaType][parameters.stage3.degradationType] ? (
+                        <div>
+                          <p className="text-xs text-slate-400 mb-2">
+                            {DEGRADATION_CONFIG[parameters.stage3.mediaType][parameters.stage3.degradationType].method}
+                          </p>
+                          {Object.entries(DEGRADATION_CONFIG[parameters.stage3.mediaType][parameters.stage3.degradationType].params).map(([key, config]) => 
+                            renderStage3ParameterControl(key, config)
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400">请先选择媒体类型和退化类型</p>
+                      )}
+                    </div>
+                  </div>
+                </StagePanel>
+              </div>
+            </div>
+
+            {/* 右侧预览区域 */}
+            <div className="w-1/2">
+              <div className="bg-slate-800/80 backdrop-blur-sm border border-cyan-400/20 rounded-lg p-4">
+                <h2 className="text-lg font-semibold text-white mb-4 flex items-center">
+                  <div className="w-6 h-6 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-lg flex items-center justify-center mr-2">
+                    <Eye className="h-3 w-3 text-white" />
+                  </div>
+                  退化过程预览
+                </h2>
+                
+                <div className="space-y-4">
+                  {/* 原始文件预览 */}
+                  <div className="bg-slate-700/50 rounded-lg overflow-hidden border border-slate-600">
+                    <div className="aspect-video bg-gradient-to-br from-slate-600 to-slate-700 flex items-center justify-center">
+                      {uploadedFile && filePreviewUrl && !isUploading ? (
+                        uploadedFile.type.startsWith('image/') ? (
+                          <img
+                            src={filePreviewUrl}
+                            alt="原始图像"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <video
+                            src={filePreviewUrl}
+                            className="w-full h-full object-cover"
+                            controls
+                            muted
+                          />
+                        )
+                      ) : (
+                        <span className="text-white text-sm font-medium">原始图像</span>
+                      )}
+                    </div>
+                    <div className="p-2 bg-slate-800">
+                      <p className="text-sm font-medium text-white">原始图像</p>
+                      <p className="text-xs text-slate-400">
+                        {uploadedFile && !isUploading ? uploadedFile.name : '未经处理的原始媒体文件'}
+                      </p>
+                    </div>
+                  </div>
+        
+                  {/* 处理结果预览 */}
+                  <div className="bg-slate-700/50 rounded-lg overflow-hidden border border-purple-400/50">
+                    <div className="aspect-video bg-gradient-to-br from-purple-900/50 to-purple-800/50 flex items-center justify-center relative">
+                      {processedPreviewUrl ? (
+                        mediaType === 'image' ? (
+                          <img
+                            src={processedPreviewUrl}
+                            alt="退化结果"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <video
+                            src={processedPreviewUrl}
+                            className="w-full h-full object-cover"
+                            controls
+                            muted
+                          />
+                        )
+                      ) : (
+                        <span className="text-purple-300 text-sm font-medium">
+                          {isProcessing ? '正在处理...' : '最终退化结果'}
+                        </span>
+                      )}
+                      {isProcessing && (
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                          <div className="text-white text-center">
+                            <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                            <p className="text-sm">{progress}%</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-2 bg-purple-900/20 border-l-2 border-purple-400">
+                      <p className="text-sm font-medium text-purple-300">最终退化结果</p>
+                      <p className="text-xs text-purple-400/80">
+                        {stageEnabled.stage3 ? '完整退化流程处理后的结果' : '两阶段退化处理后的结果'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 处理流程图示 */}
+                  <div className="bg-slate-700/30 rounded-lg p-3">
+                    <h3 className="text-sm font-medium text-white mb-2">处理流程</h3>
+                    <div className="flex items-center justify-between text-xs">
+                      <div className={`flex items-center space-x-1 ${stageEnabled.stage1 ? 'text-cyan-400' : 'text-slate-500'}`}>
+                        <div className="w-2 h-2 rounded-full bg-cyan-400"></div>
+                        <span>第一阶段</span>
+                      </div>
+                      <ArrowRight className="h-3 w-3 text-slate-400" />
+                      <div className={`flex items-center space-x-1 ${stageEnabled.stage2 ? 'text-pink-400' : 'text-slate-500'}`}>
+                        <div className="w-2 h-2 rounded-full bg-pink-400"></div>
+                        <span>第二阶段</span>
+                      </div>
+                      {stageEnabled.stage3 && (
+                        <>
+                          <ArrowRight className="h-3 w-3 text-slate-400" />
+                          <div className="flex items-center space-x-1 text-purple-400">
+                            <div className="w-2 h-2 rounded-full bg-purple-400"></div>
+                            <span>第三阶段</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-            
-            {/* 保存按钮 */}
-            <div className="mt-6 flex justify-center">
-              <button
-                onClick={handleSave}
-                className="px-6 py-3 bg-green-600 text-white rounded-md font-medium hover:bg-green-700 transition-colors flex items-center"
-              >
-                <Save className="h-5 w-5 mr-2" />
-                保存处理结果及参数配置
-              </button>
-            </div>
           </div>
-        )}
-      </main>
-
-      {/* 页脚 */}
-      <footer className="bg-white border-t border-gray-200 mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <p className="text-center text-sm text-gray-500">
-            三阶段复合退化系统 &copy; {new Date().getFullYear()}
-          </p>
         </div>
-      </footer>
+      </div>
     </div>
   );
 };
 
-export default ThreeStageDegradationSystem;
-
+export default VideoDegrade;

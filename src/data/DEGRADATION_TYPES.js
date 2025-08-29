@@ -1,10 +1,11 @@
 export const DEGRADATION_TYPES = {
   blur: { 
     name: '模糊', 
-    description: '高斯模糊退化', 
+    description: '图像模糊退化', 
     params: { 
+      blur_type: { type: 'select', options: ['高斯模糊', '均值模糊'], default: '高斯模糊', description: '模糊类型' },
       kernel_size: { type: 'int', min: 3, max: 51, default: 15, description: '模糊核大小（奇数）' }, 
-      sigma: { type: 'float', min: 0.6, max: 5.0, default: 2.0, description: '标准差' } 
+      sigma: { type: 'float', min: 0.6, max: 5.0, default: 2.0, description: '标准差（仅高斯模糊有效）' } 
     } 
   },
   resample: { 
@@ -15,14 +16,28 @@ export const DEGRADATION_TYPES = {
       interpolation: { type: 'select', options: ['区域插值', '双线性插值', '双三次插值'], default: '双三次插值', description: '插值方法（代码实际使用类型）' } 
     } 
   },
-  noise: { 
+noise: { 
+    id: 'noise',  // 必须有这个id用于识别
     name: '噪声', 
-    description: '添加各种噪声', 
+    description: '为视频/图像添加高斯、泊松或椒盐噪声，模拟真实场景中的信号干扰', 
     params: { 
-      noise_type: { type: 'select', options: ['高斯噪声', '泊松噪声'], default: 'gaussian', description: '噪声类型' }, 
-      intensity: { type: 'float', min: 0.01, max: 30.0, default: 5.0, description: '噪声强度（高斯为标准差，泊松为缩放因子）' } 
+      noise_type: { 
+        type: 'select', 
+        options: ['高斯噪声', '泊松噪声', '椒盐噪声'],  // 中文选项
+        default: '高斯噪声', 
+        description: '选择要添加的噪声类型' 
+      }, 
+      intensity: { 
+        type: 'float', 
+        min: 0.01, 
+        max: 30.0, 
+        default: 5.0, 
+        step: 0.1, 
+        description: '噪声强度参数'  // 这个描述会被动态替换
+      }
     } 
-  },
+  }
+  ,
   compression: { 
     name: '编码压缩', 
     description: 'JPEG压缩退化', 
@@ -87,3 +102,4 @@ export const DEGRADATION_TYPES = {
   }
 };
 
+  

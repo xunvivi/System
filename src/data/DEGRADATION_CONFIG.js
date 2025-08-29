@@ -84,7 +84,7 @@ export const DEGRADATION_CONFIG = {
       name: '编码压缩',
       method: 'JPEG压缩、MPEG-2压缩、H.264压缩、H.265压缩',
       params: {
-        codec: {
+        format: {
           type: 'select',
           options: [
             { value: 'jpeg', label: 'JPEG压缩' },

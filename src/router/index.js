@@ -4,14 +4,12 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 // 导入各个页面组件
 import HomePage from '../pages/HomePage';       // 首页
 import CompoundPage from '../pages/CompoundPage'; // 复合页面
-import ModelsPage from '../pages/ModelsPage';   // 模型页面
-import ResearchPage from '../pages/ResearchPage'; // 研究页面
-import ResearchFocusPage from '../pages/ResearchfocusPage'; // 研究重点页面
 import SimulationPage from '../pages/SimulationPage'; // 模拟页面
 
 // 导入公共组件
 import { Navigation } from '../components/Navigation'; // 导航栏组件
 import { Footer } from '../components/Footer';         // 页脚组件
+
 
 
 // 定义主布局组件
@@ -42,30 +40,6 @@ const router = createBrowserRouter([
     element: (
       <MainLayout>
         <CompoundPage />  {/* 复合页面内容 */}
-      </MainLayout>
-    ),
-  },
-  {
-    path: '/single',  // 单模型页面路径
-    element: (
-      <MainLayout>
-        <ModelsPage />  {/* 单模型页面内容 */}
-      </MainLayout>
-    ),
-  },
-  {
-    path: '/research',  // 研究页面路径
-    element: (
-      <MainLayout>
-        <ResearchPage />  {/* 研究页面内容 */}
-      </MainLayout>
-    ),
-  },
-  {
-    path: '/focus',  // 研究重点页面路径
-    element: (
-      <MainLayout>
-        <ResearchFocusPage />  {/* 研究重点页面内容 */}
       </MainLayout>
     ),
   },
