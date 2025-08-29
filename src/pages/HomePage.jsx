@@ -1,7 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import BannerCarousel from '../components/Banner';
-import researchAreas from '../data/researchData';
 import degradationItems from '../data/degradationItems';
 import Degradationcard from '../components/Degradationcard';
 
